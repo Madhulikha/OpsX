@@ -1,0 +1,152 @@
+.sidebar {
+  width: var(--sidebar-w);
+  background: var(--sb-bg);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Logo */
+.sidebar-logo {
+  padding: 16px 16px 14px;
+  border-bottom: 1px solid var(--sb-border);
+  margin-bottom: 6px;
+  flex-shrink: 0;
+}
+
+.logo-text {
+  font-size: 17px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.02em;
+}
+
+.logo-accent {
+  color: #6B8AFF;
+}
+
+/* Nav */
+.sidebar-nav {
+  flex: 1;
+  padding: 4px 0;
+}
+
+.sidebar-section-label {
+  padding: 10px 14px 3px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--sb-text-muted);
+  text-transform: uppercase;
+}
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 12px;
+  margin: 1px 6px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  color: var(--sb-text);
+  font-size: 13px;
+  font-weight: 400;
+  text-decoration: none;
+  transition: background 0.12s, color 0.12s;
+  user-select: none;
+}
+
+.sidebar-item:hover {
+  background: var(--sb-hover);
+  color: #fff;
+}
+
+.sidebar-item.active {
+  background: #2C2B28;
+  color: #fff;
+  font-weight: 500;
+}
+
+.sidebar-item.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sidebar-icon {
+  width: 16px;
+  text-align: center;
+  font-size: 14px;
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+.sidebar-item.active .sidebar-icon,
+.sidebar-item:hover .sidebar-icon {
+  opacity: 1;
+}
+
+.sidebar-label {
+  flex: 1;
+}
+
+.sidebar-badge {
+  background: #DC2626;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+  min-width: 18px;
+  text-align: center;
+}
+
+.sidebar-soon {
+  font-size: 10px;
+  color: var(--sb-text-muted);
+  font-weight: 500;
+}
+
+/* Footer */
+.sidebar-footer {
+  padding: 12px;
+  border-top: 1px solid var(--sb-border);
+  flex-shrink: 0;
+}
+
+.role-switcher-label {
+  font-size: 10px;
+  color: var(--sb-text-muted);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 6px;
+}
+
+.sidebar-user-card {
+  background: #2C2B28;
+  border: 1px solid #3C3B38;
+  border-radius: var(--radius);
+  padding: 10px;
+}
+
+.sidebar-user-name {
+  color: #FFFFFF;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sidebar-user-role {
+  color: #9FB3FF;
+  font-size: 11px;
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+.sidebar-user-email {
+  color: var(--sb-text);
+  font-size: 11px;
+  margin-top: 6px;
+  word-break: break-word;
+}
