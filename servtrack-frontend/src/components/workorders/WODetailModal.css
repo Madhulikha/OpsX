@@ -1,3 +1,31 @@
 .wo-modal {
   width: 620px;
 }
+
+.wo-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.wo-photo-link {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg);
+  display: block;
+}
+
+.wo-photo-link img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  display: block;
+}
+
+@media (max-width: 720px) {
+  .wo-photo-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

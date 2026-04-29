@@ -6,15 +6,19 @@ const TYPE_COLOR = { danger:'var(--danger)', warning:'var(--warning)', info:'var
 const TYPE_BG    = { danger:'var(--danger-bg)', warning:'var(--warning-bg)', info:'var(--info-bg)', success:'var(--success-bg)' };
 
 export default function Notifications() {
-  const { notifications, markNotifRead } = useApp();
+  const { notifications, markNotifRead, markAllNotificationsRead } = useApp();
+  const unreadCount = notifications.filter(n => !n.read).length;
 
   return (
     <div>
       <div className="page-header">
         <div>
           <div className="page-title">Notifications</div>
-          <div className="page-sub">{notifications.filter(n => !n.read).length} unread</div>
+          <div className="page-sub">{unreadCount} unread</div>
         </div>
+        {unreadCount > 0 && (
+          <button className="btn" onClick={markAllNotificationsRead}>Clear All</button>
+        )}
       </div>
 
       <div className="card">

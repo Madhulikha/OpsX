@@ -19,6 +19,7 @@ from app.core.database import SessionLocal
 from app.core.security import hash_password
 from app.models.user import User, UserRole
 from app.models.contractor import Contractor
+from app.models.client import ClientAccount, ClientContractorLink, ClientContractorStatus
 from app.models.work_order import WorkOrder, ActivityLog, WOStatus, WOPriority, WOCategory
 
 db = SessionLocal()
@@ -36,6 +37,7 @@ def seed():
     print("Seeding users and work orders into Supabase...")
 
     # Fetch contractors already inserted by schema.sql
+    client_account = db.query(ClientAccount).filter(ClientAccount.name == "Property Client").first()
     alphaserv = db.query(Contractor).filter(Contractor.name == "AlphaServ").first()
     cooltech  = db.query(Contractor).filter(Contractor.name == "CoolTech").first()
     brightco  = db.query(Contractor).filter(Contractor.name == "BrightCo").first()
@@ -49,10 +51,12 @@ def seed():
         sys.exit(1)
 
     # Users
-    client_admin = User(email="admin@propertyclient.in",  full_name="Vikram Mehta",   hashed_password=hash_password("Admin@1234"),       role=UserRole.CLIENT)
-    enduser_1    = User(email="security@property.in",      full_name="Ganesh Kumar",   hashed_password=hash_password("User@1234"),        role=UserRole.ENDUSER)
-    enduser_2    = User(email="reception@property.in",     full_name="Meena Iyer",     hashed_password=hash_password("User@1234"),        role=UserRole.ENDUSER)
-    enduser_3    = User(email="it@property.in",            full_name="Ajay Sharma",    hashed_password=hash_password("User@1234"),        role=UserRole.ENDUSER)
+    client_admin = User(email="admin@propertyclient.in",  full_name="Vikram Mehta",   hashed_password=hash_password("Admin@1234"),       role=UserRole.CLIENT, client_id=client_account.id, client_subrole="junior_engineer")
+    assistant_engineer = User(email="assistant@propertyclient.in", full_name="Nisha Menon", hashed_password=hash_password("Admin@1234"), role=UserRole.CLIENT, client_id=client_account.id, client_subrole="assistant_engineer")
+    commandant_engineer = User(email="commandant@propertyclient.in", full_name="Arun Prakash", hashed_password=hash_password("Admin@1234"), role=UserRole.CLIENT, client_id=client_account.id, client_subrole="commandant_engineer")
+    enduser_1    = User(email="security@property.in",      full_name="Ganesh Kumar",   hashed_password=hash_password("User@1234"),        role=UserRole.ENDUSER, client_id=client_account.id)
+    enduser_2    = User(email="reception@property.in",     full_name="Meena Iyer",     hashed_password=hash_password("User@1234"),        role=UserRole.ENDUSER, client_id=client_account.id)
+    enduser_3    = User(email="it@property.in",            full_name="Ajay Sharma",    hashed_password=hash_password("User@1234"),        role=UserRole.ENDUSER, client_id=client_account.id)
     co_alpha     = User(email="manager@alphaserv.in",      full_name="Ravi Nair",      hashed_password=hash_password("Contractor@1234"),  role=UserRole.CONTRACTOR, contractor_id=alphaserv.id)
     co_cool      = User(email="manager@cooltech.in",       full_name="Deepa Krishnan", hashed_password=hash_password("Contractor@1234"),  role=UserRole.CONTRACTOR, contractor_id=cooltech.id)
     co_bright    = User(email="manager@brightco.in",       full_name="Sunil Joshi",    hashed_password=hash_password("Contractor@1234"),  role=UserRole.CONTRACTOR, contractor_id=brightco.id)
@@ -64,7 +68,7 @@ def seed():
     wm_kiran     = User(email="kiran@brightco.in",          full_name="Kiran Thakur",   hashed_password=hash_password("Work@1234"),        role=UserRole.WORKMAN,    contractor_id=brightco.id)
     wm_dev       = User(email="dev@alphaserv.in",           full_name="Dev Bose",       hashed_password=hash_password("Work@1234"),        role=UserRole.WORKMAN,    contractor_id=alphaserv.id)
 
-    all_users = [client_admin, enduser_1, enduser_2, enduser_3,
+    all_users = [client_admin, assistant_engineer, commandant_engineer, enduser_1, enduser_2, enduser_3,
                  co_alpha, co_cool, co_bright,
                  sup_ramesh, sup_priya, sup_vijay,
                  wm_suresh, wm_arun, wm_kiran, wm_dev]
@@ -72,17 +76,25 @@ def seed():
     db.flush()
     print(f"  {len(all_users)} users inserted")
 
+    contractor_links = [
+        ClientContractorLink(client_id=client_account.id, contractor_id=contractor.id, status=ClientContractorStatus.LINKED)
+        for contractor in [alphaserv, cooltech, brightco, hydrofix]
+        if contractor is not None
+    ]
+    db.add_all(contractor_links)
+    db.flush()
+
     # Work Orders
     def ago(hours):
         return datetime.now(timezone.utc) - timedelta(hours=hours)
 
     wos = [
-        WorkOrder(ref_number="WO-0001", title="Gate motor fault — B2",      description="Gate motor not responding to remote. Vehicle access blocked.",              category=WOCategory.ELECTRICAL, area="Block B2 — Gate",        priority=WOPriority.HIGH,   status=WOStatus.ESCALATED,  raised_by_id=enduser_1.id,    contractor_id=alphaserv.id, supervisor_id=sup_ramesh.id, workman_id=wm_suresh.id, sla_hours=4,  sla_breached=True,  created_at=ago(7),   started_at=ago(6),   due_date=ago(3)),
-        WorkOrder(ref_number="WO-0002", title="HVAC filter replace — F3",   description="HVAC filter clogged. Tenants on Floor 3 complaining of bad air quality.",   category=WOCategory.HVAC,       area="Floor 3 — AHU Room",     priority=WOPriority.MEDIUM, status=WOStatus.INPROGRESS, raised_by_id=enduser_2.id,    contractor_id=cooltech.id,  supervisor_id=sup_priya.id,  workman_id=wm_arun.id,   sla_hours=24, sla_breached=False, created_at=ago(18),  started_at=ago(16)),
-        WorkOrder(ref_number="WO-0003", title="Lobby lighting fix — Main",  description="3 overhead LED fixtures not working in main lobby.",                         category=WOCategory.ELECTRICAL, area="Main Lobby — Reception",  priority=WOPriority.LOW,    status=WOStatus.ASSIGNED,   raised_by_id=enduser_2.id,    contractor_id=brightco.id,  supervisor_id=sup_vijay.id,  workman_id=wm_kiran.id,  sla_hours=48, sla_breached=False, created_at=ago(2)),
-        WorkOrder(ref_number="WO-0004", title="Pump room inspection",       description="Routine scheduled pump inspection and pressure check.",                      category=WOCategory.PLUMBING,   area="Basement — Pump Room",   priority=WOPriority.HIGH,   status=WOStatus.CLOSED,     raised_by_id=client_admin.id, contractor_id=alphaserv.id, supervisor_id=sup_ramesh.id, workman_id=wm_dev.id,    sla_hours=8,  sla_breached=False, created_at=ago(120), started_at=ago(116), closed_at=ago(114)),
-        WorkOrder(ref_number="WO-0005", title="Roof drainage blockage",     description="Drainage outlet on rooftop blocked. Water pooling — seepage risk.",         category=WOCategory.PLUMBING,   area="Rooftop — Terrace",       priority=WOPriority.HIGH,   status=WOStatus.OPEN,       raised_by_id=enduser_1.id,    contractor_id=hydrofix.id,  sla_hours=12, sla_breached=False, created_at=ago(1)),
-        WorkOrder(ref_number="WO-0006", title="Server room AC fault",       description="AC unit tripping. IT reports temp rising above 26C. Critical system risk.", category=WOCategory.HVAC,       area="IT Room — 2nd Floor",     priority=WOPriority.HIGH,   status=WOStatus.PENDING,    raised_by_id=enduser_3.id,    contractor_id=cooltech.id,  supervisor_id=sup_priya.id,  workman_id=wm_arun.id,   sla_hours=6,  sla_breached=True,  created_at=ago(22),  started_at=ago(20)),
+        WorkOrder(ref_number="WO-0001", title="Gate motor fault — B2",      description="Gate motor not responding to remote. Vehicle access blocked.",              category=WOCategory.ELECTRICAL, area="Block B2 — Gate",        priority=WOPriority.HIGH,   status=WOStatus.ESCALATED,  raised_by_id=enduser_1.id,    client_id=client_account.id, contractor_id=alphaserv.id, supervisor_id=sup_ramesh.id, workman_id=wm_suresh.id, sla_hours=4,  sla_breached=True,  created_at=ago(7),   started_at=ago(6),   due_date=ago(3)),
+        WorkOrder(ref_number="WO-0002", title="HVAC filter replace — F3",   description="HVAC filter clogged. Tenants on Floor 3 complaining of bad air quality.",   category=WOCategory.HVAC,       area="Floor 3 — AHU Room",     priority=WOPriority.MEDIUM, status=WOStatus.INPROGRESS, raised_by_id=enduser_2.id,    client_id=client_account.id, contractor_id=cooltech.id,  supervisor_id=sup_priya.id,  workman_id=wm_arun.id,   sla_hours=24, sla_breached=False, created_at=ago(18),  started_at=ago(16)),
+        WorkOrder(ref_number="WO-0003", title="Lobby lighting fix — Main",  description="3 overhead LED fixtures not working in main lobby.",                         category=WOCategory.ELECTRICAL, area="Main Lobby — Reception",  priority=WOPriority.LOW,    status=WOStatus.ASSIGNED,   raised_by_id=enduser_2.id,    client_id=client_account.id, contractor_id=brightco.id,  supervisor_id=sup_vijay.id,  workman_id=wm_kiran.id,  sla_hours=48, sla_breached=False, created_at=ago(2)),
+        WorkOrder(ref_number="WO-0004", title="Pump room inspection",       description="Routine scheduled pump inspection and pressure check.",                      category=WOCategory.PLUMBING,   area="Basement — Pump Room",   priority=WOPriority.HIGH,   status=WOStatus.CLOSED,     raised_by_id=client_admin.id, client_id=client_account.id, contractor_id=alphaserv.id, supervisor_id=sup_ramesh.id, workman_id=wm_dev.id,    sla_hours=8,  sla_breached=False, created_at=ago(120), started_at=ago(116), closed_at=ago(114)),
+        WorkOrder(ref_number="WO-0005", title="Roof drainage blockage",     description="Drainage outlet on rooftop blocked. Water pooling — seepage risk.",         category=WOCategory.PLUMBING,   area="Rooftop — Terrace",       priority=WOPriority.HIGH,   status=WOStatus.OPEN,       raised_by_id=enduser_1.id,    client_id=client_account.id, contractor_id=hydrofix.id,  sla_hours=12, sla_breached=False, created_at=ago(1)),
+        WorkOrder(ref_number="WO-0006", title="Server room AC fault",       description="AC unit tripping. IT reports temp rising above 26C. Critical system risk.", category=WOCategory.HVAC,       area="IT Room — 2nd Floor",     priority=WOPriority.HIGH,   status=WOStatus.PENDING,    raised_by_id=enduser_3.id,    client_id=client_account.id, contractor_id=cooltech.id,  supervisor_id=sup_priya.id,  workman_id=wm_arun.id,   sla_hours=6,  sla_breached=True,  created_at=ago(22),  started_at=ago(20)),
     ]
     db.add_all(wos)
     db.flush()

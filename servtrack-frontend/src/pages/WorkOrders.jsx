@@ -12,6 +12,7 @@ const FILTERS = [
   { id: 'qc',         label: 'Pending QC'      },
   { id: 'pending',    label: 'Pending Approval'},
   { id: 'escalated',  label: 'Escalated'       },
+  { id: 'rejected',   label: 'Rejected'        },
   { id: 'closed',     label: 'Closed'          },
 ];
 
@@ -110,7 +111,7 @@ export default function WorkOrders() {
                 <th>Priority</th>
                 <th>Status</th>
                 <th>SLA</th>
-                <th>Due</th>
+                <th>{role === 'enduser' ? 'Preferred Time' : 'Due'}</th>
                 <th></th>
               </tr>
             </thead>
@@ -140,7 +141,7 @@ export default function WorkOrders() {
                       color: wo.status === 'escalated' ? 'var(--danger)' : wo.slaBreached ? 'var(--warning)' : 'var(--text-2)',
                       fontWeight: (wo.status === 'escalated' || wo.slaBreached) ? 600 : 400,
                     }}>
-                      {wo.due}
+                      {role === 'enduser' ? (wo.preferredVisitTime || '—') : wo.due}
                     </td>
                     <td onClick={e => e.stopPropagation()}>
                       <button className="btn btn-sm" onClick={() => setSelectedWO(wo)}>View</button>

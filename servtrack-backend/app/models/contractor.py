@@ -37,6 +37,11 @@ class Contractor(Base):
     users: Mapped[list["User"]] = relationship("User", back_populates="contractor")  # noqa: F821
     contracts: Mapped[list["Contract"]] = relationship("Contract", back_populates="contractor")
     work_orders: Mapped[list["WorkOrder"]] = relationship("WorkOrder", back_populates="contractor")  # noqa: F821
+    client_links: Mapped[list["ClientContractorLink"]] = relationship(
+        "ClientContractorLink",
+        back_populates="contractor",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         return f"<Contractor id={self.id} name={self.name}>"

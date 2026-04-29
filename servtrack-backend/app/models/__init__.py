@@ -1,10 +1,12 @@
-from app.models.user import User, UserRole
+from app.models.client import ClientAccount, ClientContractorLink, ClientContractorStatus
+from app.models.user import User, UserRole, ClientSubRole
 from app.models.contractor import Contractor, Contract, ContractStatus
-from app.models.work_order import WorkOrder, ActivityLog, Notification, WOStatus, WOPriority, WOCategory
+from app.models.work_order import WorkOrder, WorkOrderAttachment, ActivityLog, Notification, WOStatus, WOPriority, WOCategory
 
 __all__ = [
-    "User", "UserRole",
+    "ClientAccount", "ClientContractorLink", "ClientContractorStatus",
+    "User", "UserRole", "ClientSubRole",
     "Contractor", "Contract", "ContractStatus",
-    "WorkOrder", "ActivityLog", "Notification",
+    "WorkOrder", "WorkOrderAttachment", "ActivityLog", "Notification",
     "WOStatus", "WOPriority", "WOCategory",
 ]

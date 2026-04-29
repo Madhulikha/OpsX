@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_roles
+from app.models.client import ClientContractorLink, ClientContractorStatus
 from app.models.user import User, UserRole
 from app.schemas.user import UserOut, UserUpdate
 
@@ -23,6 +24,16 @@ def list_users(
         q = q.filter(User.role == role)
     if contractor_id:
         q = q.filter(User.contractor_id == contractor_id)
+    if current_user.role == UserRole.CLIENT and contractor_id:
+        if current_user.client_id is None:
+            raise HTTPException(status_code=422, detail="Your account is not linked to a client")
+        link = db.query(ClientContractorLink).filter(
+            ClientContractorLink.client_id == current_user.client_id,
+            ClientContractorLink.contractor_id == contractor_id,
+            ClientContractorLink.status != ClientContractorStatus.INACTIVE,
+        ).first()
+        if not link:
+            raise HTTPException(status_code=403, detail="Contractor is not linked to your client")
     # Contractors can only see their own users
     if current_user.role == UserRole.CONTRACTOR:
         q = q.filter(User.contractor_id == current_user.contractor_id)

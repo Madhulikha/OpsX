@@ -63,7 +63,9 @@ function mapWorkOrder(wo, previous = null) {
     title: wo.title,
     description: wo.description || 'No description provided.',
     category: wo.category,
+    subCategory: wo.sub_category || '',
     area: wo.area,
+    preferredVisitTime: wo.preferred_visit_time || '',
     contractor: contractorName,
     contractorId: wo.contractor?.id || wo.contractor_id || null,
     supervisor: supervisorName,
@@ -86,6 +88,7 @@ function mapWorkOrder(wo, previous = null) {
     contractorInfo: wo.contractor || previous?.contractorInfo || null,
     raisedByUser: wo.raised_by_user || previous?.raisedByUser || null,
     activity: wo.activity ? wo.activity.map(mapActivity) : previous?.activity || [],
+    attachments: wo.attachments || previous?.attachments || [],
     isDetailLoaded: Array.isArray(wo.activity),
   };
 }
@@ -108,7 +111,13 @@ async function parseJson(response) {
   const payload = contentType.includes('application/json') ? await response.json() : null;
   if (!response.ok) {
     const detail = payload?.detail;
-    throw new Error(typeof detail === 'string' ? detail : 'Request failed');
+    if (typeof detail === 'string') throw new Error(detail);
+    if (Array.isArray(detail) && detail.length > 0) {
+      const first = detail[0];
+      const field = Array.isArray(first.loc) ? first.loc[first.loc.length - 1] : null;
+      throw new Error(`${field ? `${field}: ` : ''}${first.msg || 'Request failed'}`);
+    }
+    throw new Error('Request failed');
   }
   return payload;
 }
@@ -120,6 +129,7 @@ export function AppProvider({ children }) {
   const [dataLoading, setDataLoading] = useState(false);
   const [workOrders, setWorkOrders] = useState([]);
   const [contractors, setContractors] = useState([]);
+  const [contracts, setContracts] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [dashboardStats, setDashboardStats] = useState(null);
   const [usersByQuery, setUsersByQuery] = useState({});
@@ -139,7 +149,7 @@ export function AppProvider({ children }) {
       ...(options.headers || {}),
     };
     if (token) headers.Authorization = `Bearer ${token}`;
-    if (options.body && !headers['Content-Type']) {
+    if (options.body && !(options.body instanceof FormData) && !headers['Content-Type']) {
       headers['Content-Type'] = 'application/json';
     }
 
@@ -179,6 +189,12 @@ export function AppProvider({ children }) {
     return data;
   }, [apiFetch]);
 
+  const loadContracts = useCallback(async () => {
+    const data = await apiFetch('/contractors/contracts');
+    setContracts(data);
+    return data;
+  }, [apiFetch]);
+
   const loadDashboardStats = useCallback(async () => {
     const data = await apiFetch('/work-orders/dashboard-stats');
     setDashboardStats(data);
@@ -202,12 +218,13 @@ export function AppProvider({ children }) {
         loadWorkOrders(),
         loadNotifications(),
         loadContractors(),
+        loadContracts(),
         loadDashboardStats(),
       ]);
     } finally {
       setDataLoading(false);
     }
-  }, [loadContractors, loadDashboardStats, loadNotifications, loadWorkOrders]);
+  }, [loadContractors, loadContracts, loadDashboardStats, loadNotifications, loadWorkOrders]);
 
   const hydrateSession = useCallback(async () => {
     if (!token) {
@@ -232,6 +249,31 @@ export function AppProvider({ children }) {
     hydrateSession();
   }, [hydrateSession]);
 
+  useEffect(() => {
+    if (!isAuthenticated) return undefined;
+
+    const refresh = () => {
+      loadAppData().catch(() => {});
+    };
+
+    const intervalId = window.setInterval(() => {
+      if (!document.hidden) refresh();
+    }, 10000);
+
+    const handleFocus = () => refresh();
+    const handleVisibilityChange = () => {
+      if (!document.hidden) refresh();
+    };
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isAuthenticated, loadAppData]);
+
   const login = useCallback(async (email, password) => {
     const data = await fetch(`${API_BASE_URL}/auth/login`, {
       method: 'POST',
@@ -251,19 +293,60 @@ export function AppProvider({ children }) {
           return parseJson(response);
         };
 
-        const [woData, notifData, contractorData, statsData] = await Promise.all([
+        const [woData, notifData, contractorData, contractData, statsData] = await Promise.all([
           authedFetch('/work-orders/'),
           authedFetch('/notifications/'),
           authedFetch('/contractors/'),
+          authedFetch('/contractors/contracts'),
           authedFetch('/work-orders/dashboard-stats'),
         ]);
 
         setWorkOrders(woData.map(item => mapWorkOrder(item)));
         setNotifications(notifData.map(mapNotification));
         setContractors(contractorData);
+        setContracts(contractData);
         setDashboardStats(statsData);
       })(),
     ]);
+    return data.user;
+  }, []);
+
+  const acceptInvite = useCallback(async ({ token: inviteToken, fullName, password, phone }) => {
+    const data = await fetch(`${API_BASE_URL}/auth/accept-invite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token: inviteToken,
+        full_name: fullName,
+        password,
+        phone: phone || null,
+      }),
+    }).then(parseJson);
+
+    localStorage.setItem(TOKEN_KEY, data.access_token);
+    setToken(data.access_token);
+    setCurrentUser(data.user);
+
+    const authedFetch = async (path) => {
+      const response = await fetch(`${API_BASE_URL}${path}`, {
+        headers: { Authorization: `Bearer ${data.access_token}` },
+      });
+      return parseJson(response);
+    };
+
+    const [woData, notifData, contractorData, contractData, statsData] = await Promise.all([
+      authedFetch('/work-orders/'),
+      authedFetch('/notifications/'),
+      authedFetch('/contractors/'),
+      authedFetch('/contractors/contracts'),
+      authedFetch('/work-orders/dashboard-stats'),
+    ]);
+
+    setWorkOrders(woData.map(item => mapWorkOrder(item)));
+    setNotifications(notifData.map(mapNotification));
+    setContractors(contractorData);
+    setContracts(contractData);
+    setDashboardStats(statsData);
     return data.user;
   }, []);
 
@@ -274,6 +357,7 @@ export function AppProvider({ children }) {
     setWorkOrders([]);
     setNotifications([]);
     setContractors([]);
+    setContracts([]);
     setDashboardStats(null);
     setUsersByQuery({});
   }, []);
@@ -305,16 +389,39 @@ export function AppProvider({ children }) {
   }, [apiFetch, loadDashboardStats, loadNotifications, mergeWorkOrder]);
 
   const createWorkOrder = useCallback(async (form) => {
+    if (form.photos?.length) {
+      const body = new FormData();
+      body.append('title', form.title);
+      body.append('description', form.description || '');
+      body.append('category', form.category);
+      body.append('sub_category', form.subCategory || '');
+      body.append('area', form.area);
+      body.append('priority', form.priority);
+      body.append('preferred_visit_time', form.preferredVisitTime || '');
+      body.append('sla_hours', '24');
+      form.photos.forEach(photo => body.append('photos', photo));
+
+      const payload = await apiFetch('/work-orders/with-photos', {
+        method: 'POST',
+        body,
+      });
+      mergeWorkOrder(payload);
+      await Promise.all([loadNotifications(), loadDashboardStats()]);
+      return payload;
+    }
+
     const payload = await apiFetch('/work-orders/', {
       method: 'POST',
       body: JSON.stringify({
         title: form.title,
         description: form.description || null,
         category: form.category,
+        sub_category: form.subCategory || null,
         area: form.area,
         priority: form.priority,
-        sla_hours: form.slaHours,
-        due_date: form.due ? `${form.due}T00:00:00Z` : null,
+        preferred_visit_time: form.preferredVisitTime || null,
+        sla_hours: 24,
+        due_date: null,
         contractor_id: form.contractorId ? Number(form.contractorId) : null,
         supervisor_id: null,
         workman_id: null,
@@ -328,6 +435,76 @@ export function AppProvider({ children }) {
   const markNotifRead = useCallback(async (id) => {
     await apiFetch(`/notifications/${id}/read`, { method: 'POST' });
     setNotifications(prev => prev.map(n => (n.id === id ? { ...n, read: true } : n)));
+  }, [apiFetch]);
+
+  const markAllNotificationsRead = useCallback(async () => {
+    await apiFetch('/notifications/mark-all-read', { method: 'POST' });
+    setNotifications(prev => prev.map(notification => ({ ...notification, read: true })));
+  }, [apiFetch]);
+
+  const escalateRequest = useCallback(async (id) => {
+    const payload = await apiFetch(`/work-orders/${id}/escalate`, { method: 'POST' });
+    mergeWorkOrder(payload);
+    await Promise.all([loadNotifications(), loadDashboardStats()]);
+    return payload;
+  }, [apiFetch, loadDashboardStats, loadNotifications, mergeWorkOrder]);
+
+  const addRequestDetails = useCallback(async (id, note) => {
+    const payload = await apiFetch(`/work-orders/${id}/additional-details`, {
+      method: 'POST',
+      body: JSON.stringify({ note }),
+    });
+    mergeWorkOrder(payload);
+    await Promise.all([loadNotifications(), loadDashboardStats()]);
+    return payload;
+  }, [apiFetch, loadDashboardStats, loadNotifications, mergeWorkOrder]);
+
+  const createContractor = useCallback(async (form) => {
+    const payload = await apiFetch('/contractors/', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: form.name.trim(),
+        speciality: form.speciality.trim(),
+        email: form.email.trim(),
+        phone: form.phone.trim(),
+        address: form.address.trim(),
+      }),
+    });
+    setContractors(prev => [payload, ...prev.filter(contractor => contractor.id !== payload.id)]);
+    return payload;
+  }, [apiFetch]);
+
+  const discoverContractors = useCallback(async (search = '') => {
+    const params = new URLSearchParams();
+    if (search.trim()) params.set('search', search.trim());
+    return apiFetch(`/contractors/discover${params.toString() ? `?${params.toString()}` : ''}`);
+  }, [apiFetch]);
+
+  const linkContractor = useCallback(async (contractorId) => {
+    const payload = await apiFetch('/contractors/link', {
+      method: 'POST',
+      body: JSON.stringify({ contractor_id: contractorId }),
+    });
+    setContractors(prev => [payload, ...prev.filter(contractor => contractor.id !== payload.id)]);
+    return payload;
+  }, [apiFetch]);
+
+  const createContract = useCallback(async (form) => {
+    const payload = await apiFetch('/contractors/contracts', {
+      method: 'POST',
+      body: JSON.stringify({
+        contractor_id: Number(form.contractorId),
+        title: form.title.trim(),
+        scope: form.scope?.trim() || null,
+        start_date: form.startDate,
+        end_date: form.endDate,
+        value: Number(form.value || 0),
+        default_sla_hours: Number(form.defaultSlaHours || 24),
+        status: form.status,
+      }),
+    });
+    setContracts(prev => [payload, ...prev.filter(contract => contract.id !== payload.id)]);
+    return payload;
   }, [apiFetch]);
 
   const unreadCount = useMemo(
@@ -353,11 +530,21 @@ export function AppProvider({ children }) {
       updateWOStatus,
       updateWorkOrder,
       createWorkOrder,
+      escalateRequest,
+      addRequestDetails,
       dashboardStats,
       contractors,
       notifications,
       markNotifRead,
+      markAllNotificationsRead,
       unreadCount,
+      createContractor,
+      discoverContractors,
+      linkContractor,
+      contracts,
+      loadContracts,
+      createContract,
+      acceptInvite,
       toasts,
       showToast,
     }}>

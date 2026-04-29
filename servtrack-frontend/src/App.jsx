@@ -13,7 +13,9 @@ import SLATracker   from './pages/SLATracker';
 import Approvals    from './pages/Approvals';
 import Notifications from './pages/Notifications';
 import Contractors  from './pages/Contractors';
+import Contracts    from './pages/Contracts';
 import Login        from './pages/Login';
+import InviteSignup from './pages/InviteSignup';
 import RaiseRequest from './pages/RaiseRequest';
 import Placeholder  from './pages/Placeholder';
 
@@ -45,7 +47,7 @@ function AppShell() {
             <Route path="/approvals"     element={<Approvals />} />
             <Route path="/notifications" element={<Notifications />} />
             <Route path="/contractors"   element={<Contractors />} />
-            <Route path="/contracts"     element={<Placeholder title="Contracts"  phase="Phase 2" description="Manage contractor agreements, SLA definitions, and document uploads." />} />
+            <Route path="/contracts"     element={<Contracts />} />
             <Route path="/assets"        element={<Placeholder title="Assets & Inventory" phase="Phase 2" description="Track equipment, assign assets to work orders, and log condition reports." />} />
             <Route path="/analytics"     element={<Placeholder title="Analytics & Reports" phase="Phase 3" description="Per-role dashboards, SLA trends, contractor performance, and PDF exports." />} />
             <Route path="/workforce"     element={<Placeholder title="Workforce" phase="Phase 2" description="Manage workmen, assign to supervisors, track attendance and skills." />} />
@@ -72,6 +74,10 @@ function AppRoutes() {
       <Route
         path="/login"
         element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />}
+      />
+      <Route
+        path="/invite"
+        element={<InviteSignup />}
       />
       <Route
         path="/*"

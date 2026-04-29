@@ -17,7 +17,7 @@ create type user_role as enum (
 );
 
 create type wo_status as enum (
-    'open', 'assigned', 'inprogress', 'qc', 'pending', 'closed', 'escalated'
+    'open', 'assigned', 'inprogress', 'qc', 'pending', 'closed', 'escalated', 'rejected'
 );
 
 create type wo_priority as enum (
@@ -30,6 +30,21 @@ create type wo_category as enum (
 
 create type contract_status as enum (
     'active', 'expired', 'pending', 'paused'
+);
+
+create type client_contractor_status as enum (
+    'linked', 'invited', 'inactive'
+);
+
+
+-- ================================================================
+--  CLIENTS
+-- ================================================================
+
+create table if not exists clients (
+    id          serial primary key,
+    name        varchar(200)    not null unique,
+    created_at  timestamptz     not null default now()
 );
 
 
@@ -84,12 +99,15 @@ create table if not exists users (
     role              user_role       not null,
     phone             varchar(20),
     contractor_id     integer         references contractors(id) on delete set null,
+    client_id         integer         references clients(id) on delete set null,
+    client_subrole    varchar(50),
     is_active         boolean         not null default true,
     created_at        timestamptz     not null default now()
 );
 
 create index if not exists idx_users_email         on users(email);
 create index if not exists idx_users_contractor_id on users(contractor_id);
+create index if not exists idx_users_client_id     on users(client_id);
 create index if not exists idx_users_role          on users(role);
 
 
@@ -103,11 +121,14 @@ create table if not exists work_orders (
     title           varchar(300)    not null,
     description     text,
     category        wo_category     not null,
+    sub_category    varchar(120),
     area            varchar(200)    not null,
+    preferred_visit_time varchar(80),
     priority        wo_priority     not null,
     status          wo_status       not null default 'open',
 
     raised_by_id    integer         not null references users(id)       on delete restrict,
+    client_id       integer         not null references clients(id)     on delete restrict,
     contractor_id   integer                  references contractors(id)  on delete set null,
     supervisor_id   integer                  references users(id)        on delete set null,
     workman_id      integer                  references users(id)        on delete set null,
@@ -123,10 +144,23 @@ create table if not exists work_orders (
 );
 
 create index if not exists idx_wo_status        on work_orders(status);
+create index if not exists idx_wo_client        on work_orders(client_id);
 create index if not exists idx_wo_contractor    on work_orders(contractor_id);
 create index if not exists idx_wo_supervisor    on work_orders(supervisor_id);
 create index if not exists idx_wo_workman       on work_orders(workman_id);
 create index if not exists idx_wo_raised_by     on work_orders(raised_by_id);
+
+create table if not exists work_order_attachments (
+    id                 serial primary key,
+    work_order_id      integer       not null references work_orders(id) on delete cascade,
+    file_url           varchar(500)  not null,
+    original_filename  varchar(255)  not null,
+    content_type       varchar(100)  not null,
+    file_size          integer       not null,
+    created_at         timestamptz   not null default now()
+);
+
+create index if not exists idx_wo_attachment_wo on work_order_attachments(work_order_id);
 
 -- Auto-update updated_at on any row change
 create or replace function set_updated_at()
@@ -183,6 +217,23 @@ create index if not exists idx_notif_unread  on notifications(user_id, is_read);
 
 
 -- ================================================================
+--  CLIENT ↔ CONTRACTOR LINKS
+-- ================================================================
+
+create table if not exists client_contractor_links (
+    id             serial primary key,
+    client_id      integer                  not null references clients(id) on delete cascade,
+    contractor_id  integer                  not null references contractors(id) on delete cascade,
+    status         client_contractor_status not null default 'linked',
+    created_at     timestamptz              not null default now(),
+    constraint uq_client_contractor_link unique (client_id, contractor_id)
+);
+
+create index if not exists idx_client_contractor_client on client_contractor_links(client_id);
+create index if not exists idx_client_contractor_contractor on client_contractor_links(contractor_id);
+
+
+-- ================================================================
 --  SEED DATA
 --  (runs after schema creation in the same query)
 -- ================================================================
@@ -193,6 +244,10 @@ insert into contractors (name, speciality, email, phone, rating) values
     ('CoolTech',   'HVAC, Air Conditioning',            'ops@cooltech.in',  '9800000002', 4.5),
     ('BrightCo',   'Electrical, Lighting',              'ops@brightco.in',  '9800000003', 4.6),
     ('HydroFix',   'Plumbing, Drainage, Waterproofing', 'ops@hydrofix.in',  '9800000004', 4.3)
+on conflict do nothing;
+
+insert into clients (name) values
+    ('Property Client')
 on conflict do nothing;
 
 -- Contracts (reference contractors by name for portability)
@@ -211,6 +266,13 @@ from contractors where name = 'BrightCo' on conflict do nothing;
 insert into contracts (contractor_id, title, scope, start_date, end_date, value, default_sla_hours, status)
 select id, 'Plumbing & Drainage Contract', 'All plumbing fixtures, drainage, pumps', current_date, current_date + 365, 400000, 12, 'active'
 from contractors where name = 'HydroFix' on conflict do nothing;
+
+insert into client_contractor_links (client_id, contractor_id, status)
+select c.id, ctr.id, 'linked'
+from clients c
+cross join contractors ctr
+where c.name = 'Property Client'
+on conflict do nothing;
 
 -- Users
 -- Passwords below are bcrypt hashes. Plaintext shown in comments.

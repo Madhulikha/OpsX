@@ -1,17 +1,25 @@
 from datetime import date, datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, field_validator
 
 from app.models.contractor import ContractStatus
+from app.models.client import ClientContractorStatus
 
 
 class ContractorCreate(BaseModel):
     name: str
-    speciality: Optional[str] = None
-    email: Optional[str] = None
-    phone: Optional[str] = None
-    address: Optional[str] = None
+    speciality: str
+    email: EmailStr
+    phone: str
+    address: str
+
+    @field_validator("name", "speciality", "phone", "address")
+    @classmethod
+    def required_text(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("This field is required")
+        return value.strip()
 
 
 class ContractorUpdate(BaseModel):
@@ -33,6 +41,13 @@ class ContractorOut(BaseModel):
     rating: float
     is_active: bool
     created_at: datetime
+    link_status: Optional[ClientContractorStatus] = None
+    linked_at: Optional[datetime] = None
+    has_login: bool = False
+    active_user_count: int = 0
+    manager_count: int = 0
+    invite_sent: bool = False
+    invite_url: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -42,6 +57,25 @@ class ContractorSummary(BaseModel):
     name: str
     speciality: Optional[str]
     rating: float
+    has_login: bool = False
+    link_status: Optional[ClientContractorStatus] = None
+
+    model_config = {"from_attributes": True}
+
+
+class ContractorLinkRequest(BaseModel):
+    contractor_id: int
+
+
+class ContractorDiscoverOut(BaseModel):
+    id: int
+    name: str
+    speciality: Optional[str]
+    email: Optional[str]
+    phone: Optional[str]
+    rating: float
+    has_login: bool = False
+    active_user_count: int = 0
 
     model_config = {"from_attributes": True}
 

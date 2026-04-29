@@ -106,6 +106,14 @@ export default function Sidebar() {
   const approvalsCount = workOrders.filter(wo => wo.status === 'pending' || wo.status === 'escalated').length;
   const activeTaskCount = workOrders.filter(wo => wo.status !== 'closed').length;
   const roleInfo = ROLES[role] || ROLES.client;
+  const clientSubroleLabels = {
+    junior_engineer: 'Junior Engineer',
+    assistant_engineer: 'Assistant Engineer',
+    commandant_engineer: 'Commandant Engineer',
+  };
+  const displayRole = role === 'client'
+    ? clientSubroleLabels[currentUser?.client_subrole] || 'Junior Engineer'
+    : roleInfo.label;
 
   return (
     <aside className="sidebar">
@@ -149,7 +157,7 @@ export default function Sidebar() {
         <div className="role-switcher-label">Signed in as</div>
         <div className="sidebar-user-card">
           <div className="sidebar-user-name">{currentUser?.full_name || 'Unknown User'}</div>
-          <div className="sidebar-user-role">{roleInfo.label}</div>
+          <div className="sidebar-user-role">{displayRole}</div>
           <div className="sidebar-user-email">{currentUser?.email}</div>
         </div>
       </div>

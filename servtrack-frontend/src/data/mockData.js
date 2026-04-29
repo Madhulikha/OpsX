@@ -4,7 +4,7 @@
 // ============================================================
 
 export const ROLES = {
-  client:     { label: 'Client',      avatar: 'CL', color: '#1B4FD8' },
+  client:     { label: 'Engineer',    avatar: 'EN', color: '#1B4FD8' },
   contractor: { label: 'Contractor',  avatar: 'CO', color: '#059669' },
   supervisor: { label: 'Supervisor',  avatar: 'SV', color: '#7C3AED' },
   workman:    { label: 'Workman',     avatar: 'WM', color: '#D97706' },
@@ -19,11 +19,38 @@ export const STATUS_CONFIG = {
   pending:    { label: 'Pending Approval', cls: 'badge-pending' },
   closed:     { label: 'Closed',           cls: 'badge-closed' },
   escalated:  { label: 'Escalated',        cls: 'badge-escalated' },
+  rejected:   { label: 'Rejected',         cls: 'badge-escalated' },
 };
 
 export const STATUS_FLOW = ['open', 'assigned', 'inprogress', 'qc', 'pending', 'closed'];
 
 export const CATEGORIES = ['Electrical', 'HVAC', 'Plumbing', 'Civil', 'Fire Safety', 'Carpentry', 'Other'];
+
+export const REQUEST_CATEGORY_OPTIONS = {
+  Electrical: ['Light not working', 'Switch / socket issue', 'Power failure', 'Fan issue', 'Other'],
+  HVAC: ['AC not cooling', 'Temperature issue', 'Water leakage', 'Noise / vibration', 'Other'],
+  Plumbing: ['Leakage', 'Drain blockage', 'No water supply', 'Fixture damage', 'Other'],
+  Civil: ['Wall / ceiling damage', 'Door / window issue', 'Flooring issue', 'Seepage', 'Other'],
+  'Fire Safety': ['Alarm issue', 'Extinguisher issue', 'Exit signage', 'Sprinkler issue', 'Other'],
+  Carpentry: ['Furniture repair', 'Door hardware', 'Cabinet / shelf issue', 'Other'],
+  Other: ['General maintenance', 'Housekeeping support', 'Safety concern', 'Other'],
+};
+
+export const REQUEST_AREAS = [
+  'Main Lobby',
+  'Reception',
+  'Common Area',
+  'Restroom',
+  'Pantry',
+  'Parking',
+  'Basement',
+  'Rooftop',
+  'Office / Cabin',
+  'Corridor',
+  'Security Gate',
+  'Utility Room',
+  'Other'
+];
 
 export const CONTRACTORS = [
   { id: 'c1', name: 'AlphaServ',  speciality: 'Electrical, Civil',    rating: 4.8, activeWOs: 6 },

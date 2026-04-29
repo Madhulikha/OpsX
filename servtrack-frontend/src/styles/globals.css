@@ -432,6 +432,34 @@ select.form-input { cursor: pointer; }
   gap: 12px;
 }
 
+.request-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.request-photo-preview {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.request-photo-preview img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  display: block;
+  background: var(--bg);
+}
+
+.request-photo-preview .btn {
+  width: calc(100% - 12px);
+  margin: 6px;
+  justify-content: center;
+}
+
 /* ===========================
    Alerts
    =========================== */

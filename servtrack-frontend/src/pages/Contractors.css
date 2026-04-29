@@ -1,0 +1,232 @@
+.contractor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.contractor-card {
+  margin-bottom: 0;
+  text-align: left;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.12s, box-shadow 0.15s;
+}
+
+.contractor-card:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+.contractor-card-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.contractor-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--accent-bg);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.contractor-card-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.contractor-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.contractor-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.contractor-speciality {
+  font-size: 12px;
+  color: var(--text-2);
+  margin-top: 2px;
+}
+
+.contractor-status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+}
+
+.contractor-status-pill.active {
+  background: var(--success-bg);
+  border-color: var(--success-border);
+  color: var(--success);
+}
+
+.contractor-status-pill.pending {
+  background: var(--warning-bg);
+  border-color: var(--warning-border);
+  color: var(--warning);
+}
+
+.contractor-rating {
+  margin-left: auto;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.contractor-rating-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--success);
+}
+
+.contractor-rating-label {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.contractor-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.contractor-meta-value {
+  margin-top: 2px;
+}
+
+.contractor-meta-contact {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.contractor-modal {
+  width: 560px;
+}
+
+.contractor-modal-sub {
+  margin-top: 4px;
+}
+
+.contractor-detail-stats {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 18px;
+}
+
+.contractor-detail-kpi {
+  font-size: 22px;
+}
+
+.contractor-detail-status {
+  font-size: 18px;
+}
+
+.contractor-tabs {
+  margin-bottom: 18px;
+}
+
+.contractor-discover-empty {
+  padding: 36px 16px;
+}
+
+.contractor-discover-list {
+  display: grid;
+  gap: 10px;
+}
+
+.contractor-discover-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+}
+
+.contractor-discover-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.contractor-discover-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.contractor-invite-alert {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.contractor-invite-alert > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.contractor-invite-alert .form-input {
+  margin-top: 8px;
+  color: var(--text-2);
+}
+
+@media (max-width: 980px) {
+  .contractor-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .contractor-modal {
+    width: 100%;
+  }
+
+  .contractor-detail-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .contractor-card-top {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .contractor-rating {
+    width: 100%;
+    margin-left: 0;
+    text-align: left;
+  }
+
+  .contractor-meta-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .contractor-discover-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

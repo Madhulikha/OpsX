@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 
 const DEMO_USERS = [
-  { label: 'Client Admin', email: 'admin@propertyclient.in', password: 'Admin@1234' },
+  { label: 'Junior Engineer', email: 'admin@propertyclient.in', password: 'Admin@1234' },
+  { label: 'Assistant Engineer', email: 'assistant@propertyclient.in', password: 'Admin@1234' },
+  { label: 'Commandant Engineer', email: 'commandant@propertyclient.in', password: 'Admin@1234' },
   { label: 'Contractor', email: 'manager@alphaserv.in', password: 'Contractor@1234' },
   { label: 'Supervisor', email: 'ramesh@alphaserv.in', password: 'Super@1234' },
   { label: 'Workman', email: 'suresh@alphaserv.in', password: 'Work@1234' },

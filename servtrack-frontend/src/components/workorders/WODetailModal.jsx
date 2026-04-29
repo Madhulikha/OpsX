@@ -43,6 +43,7 @@ function normalizePatch(form, liveWO, role) {
 
 export default function WODetailModal({ wo, onClose }) {
   const {
+    apiBaseUrl,
     role,
     currentUser,
     workOrders,
@@ -52,11 +53,15 @@ export default function WODetailModal({ wo, onClose }) {
     loadWorkOrderDetail,
     updateWorkOrder,
     updateWOStatus,
+    escalateRequest,
+    addRequestDetails,
     showToast,
   } = useApp();
 
   const [rejectNote, setRejectNote] = useState('');
+  const [additionalDetails, setAdditionalDetails] = useState('');
   const [showRejectInput, setShowRejectInput] = useState(false);
+  const [showDetailsInput, setShowDetailsInput] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(null);
 
@@ -73,6 +78,7 @@ export default function WODetailModal({ wo, onClose }) {
     if (role === 'contractor' || role === 'supervisor') return currentUser?.contractor_id || liveWO?.contractorId || null;
     return form?.contractorId ? Number(form.contractorId) : liveWO?.contractorId || null;
   }, [currentUser?.contractor_id, form?.contractorId, liveWO?.contractorId, role]);
+  const selectedContractor = contractors.find(contractor => Number(contractor.id) === Number(selectedContractorId));
 
   const supervisorQueryKey = selectedContractorId ? `role=supervisor&contractor_id=${selectedContractorId}` : 'role=supervisor';
   const workmanQueryKey = selectedContractorId ? `role=workman&contractor_id=${selectedContractorId}` : 'role=workman';
@@ -80,6 +86,7 @@ export default function WODetailModal({ wo, onClose }) {
   const workmen = usersByQuery[workmanQueryKey] || [];
 
   const canEdit = ['client', 'contractor', 'supervisor'].includes(role);
+  const backendOrigin = apiBaseUrl.replace(/\/api\/v1\/?$/, '');
 
   useEffect(() => {
     if (liveWO && !liveWO.isDetailLoaded) {
@@ -93,7 +100,9 @@ export default function WODetailModal({ wo, onClose }) {
       title: liveWO.title,
       description: liveWO.description,
       category: liveWO.category,
+      subCategory: liveWO.subCategory || '',
       area: liveWO.area,
+      preferredVisitTime: liveWO.preferredVisitTime || '',
       priority: liveWO.priority,
       slaHours: liveWO.slaHours,
       dueDate: dateInputValue(liveWO.dueDate),
@@ -147,19 +156,72 @@ export default function WODetailModal({ wo, onClose }) {
     }
   }
 
+  async function handleEscalate() {
+    setSaving(true);
+    try {
+      await escalateRequest(liveWO.id);
+      showToast('Request escalated to the engineering team', 'success');
+      onClose();
+    } catch (error) {
+      showToast(error.message || 'Could not escalate request', 'danger');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleAddDetails() {
+    if (!additionalDetails.trim()) {
+      showToast('Add the extra details first', 'danger');
+      return;
+    }
+    setSaving(true);
+    try {
+      await addRequestDetails(liveWO.id, additionalDetails.trim());
+      showToast('Additional details added', 'success');
+      onClose();
+    } catch (error) {
+      showToast(error.message || 'Could not add details', 'danger');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function renderActions() {
     if (liveWO.status === 'closed') return null;
 
     if (role === 'client') {
       if (liveWO.status === 'open') {
-        return (
-          <button
-            className="btn btn-primary"
-            disabled={saving || !selectedContractorId}
-            onClick={() => runTransition('assigned', 'Contractor assigned and notified')}
-          >
-            Confirm &amp; Assign
-          </button>
+        return showRejectInput ? (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flex: 1 }}>
+            <input
+              className="form-input"
+              style={{ flex: 1, padding: '5px 10px', fontSize: 12 }}
+              placeholder="Reason for rejection..."
+              value={rejectNote}
+              onChange={event => setRejectNote(event.target.value)}
+            />
+            <button
+              className="btn btn-danger btn-sm"
+              disabled={saving || !rejectNote.trim()}
+              onClick={() => runTransition('rejected', 'Request rejected', rejectNote)}
+            >
+              Confirm Reject
+            </button>
+            <button className="btn btn-sm" onClick={() => setShowRejectInput(false)}>Cancel</button>
+          </div>
+        ) : (
+          <>
+            <button
+              className="btn btn-primary"
+              disabled={saving || !selectedContractorId}
+              onClick={() => runTransition('assigned', 'Request approved and contractor notified')}
+            >
+              Approve &amp; Assign
+            </button>
+            <button className="btn btn-danger" disabled={saving} onClick={() => setShowRejectInput(true)}>
+              Reject
+            </button>
+          </>
         );
       }
       if (liveWO.status === 'escalated') {
@@ -245,6 +307,21 @@ export default function WODetailModal({ wo, onClose }) {
       );
     }
 
+    if (role === 'enduser' && liveWO.status !== 'closed') {
+      return (
+        <>
+          {(liveWO.status === 'rejected' || (liveWO.status === 'open' && liveWO.priority === 'Low')) && (
+            <button className="btn" disabled={saving} onClick={() => setShowDetailsInput(true)}>
+              Add Details
+            </button>
+          )}
+          <button className="btn btn-danger" disabled={saving} onClick={handleEscalate}>
+            Escalate
+          </button>
+        </>
+      );
+    }
+
     return null;
   }
 
@@ -303,6 +380,8 @@ export default function WODetailModal({ wo, onClose }) {
             <div className="detail-item"><div className="dl">Workman</div><div className="dv">{liveWO.workman}</div></div>
             <div className="detail-item"><div className="dl">Area / Zone</div><div className="dv">{liveWO.area}</div></div>
             <div className="detail-item"><div className="dl">Category</div><div className="dv">{liveWO.category}</div></div>
+            <div className="detail-item"><div className="dl">Sub Category</div><div className="dv">{liveWO.subCategory || '—'}</div></div>
+            <div className="detail-item"><div className="dl">Preferred Time</div><div className="dv">{liveWO.preferredVisitTime || '—'}</div></div>
             <div className="detail-item"><div className="dl">Raised By</div><div className="dv">{liveWO.raisedBy}</div></div>
             <div className="detail-item"><div className="dl">Raised On</div><div className="dv">{liveWO.raisedOn}</div></div>
             <div className="detail-item"><div className="dl">Due Date</div><div className="dv">{liveWO.due}</div></div>
@@ -376,6 +455,11 @@ export default function WODetailModal({ wo, onClose }) {
                         <option key={contractor.id} value={contractor.id}>{contractor.name}</option>
                       ))}
                     </select>
+                    {selectedContractor && !selectedContractor.has_login && (
+                      <div className="text-xs text-2" style={{ marginTop: 6 }}>
+                        This contractor is linked but still pending activation. A contractor-side login is needed before they can start working here.
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -445,6 +529,41 @@ export default function WODetailModal({ wo, onClose }) {
           <div style={{ fontSize: 13, color: 'var(--text-2)', padding: '10px 12px', background: 'var(--bg)', borderRadius: 'var(--radius)', marginBottom: 4, lineHeight: 1.6 }}>
             {liveWO.description}
           </div>
+
+          {showDetailsInput && (
+            <div className="alert alert-info" style={{ display: 'block' }}>
+              <label className="form-label">Additional Details</label>
+              <textarea
+                className="form-input"
+                value={additionalDetails}
+                onChange={event => setAdditionalDetails(event.target.value)}
+                placeholder="Add extra context requested by the engineer..."
+              />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+                <button className="btn btn-sm" onClick={() => setShowDetailsInput(false)}>Cancel</button>
+                <button className="btn btn-primary btn-sm" disabled={saving} onClick={handleAddDetails}>Submit Details</button>
+              </div>
+            </div>
+          )}
+
+          {liveWO.attachments?.length > 0 && (
+            <>
+              <div className="section-heading">Photos</div>
+              <div className="wo-photo-grid">
+                {liveWO.attachments.map(attachment => (
+                  <a
+                    key={attachment.id}
+                    href={`${backendOrigin}${attachment.file_url}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="wo-photo-link"
+                  >
+                    <img src={`${backendOrigin}${attachment.file_url}`} alt={attachment.original_filename} />
+                  </a>
+                ))}
+              </div>
+            </>
+          )}
 
           <div className="section-heading">Activity Log</div>
           <div className="timeline">

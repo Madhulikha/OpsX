@@ -20,6 +20,7 @@ class WOStatus(str, enum.Enum):
     PENDING    = "pending"       # pending client approval
     CLOSED     = "closed"
     ESCALATED  = "escalated"
+    REJECTED   = "rejected"
 
 
 class WOPriority(str, enum.Enum):
@@ -41,7 +42,8 @@ class WOCategory(str, enum.Enum):
 # ── Valid status transitions per role ─────────────────────────────────────────
 # Maps (current_status, role) → allowed_next_statuses
 STATUS_TRANSITIONS: dict[tuple[str, str], list[str]] = {
-    ("open",       "client"):     ["assigned"],
+    ("open",       "client"):     ["assigned", "rejected"],
+    ("rejected",   "enduser"):    ["open"],
     ("assigned",   "contractor"): ["inprogress"],
     ("assigned",   "supervisor"): ["inprogress"],
     ("inprogress", "workman"):    ["qc"],
@@ -67,7 +69,9 @@ class WorkOrder(Base):
     category: Mapped[WOCategory]  = mapped_column(
         Enum(WOCategory, name="wo_category", values_callable=enum_values), nullable=False
     )
+    sub_category: Mapped[str]     = mapped_column(String(120), nullable=True)
     area: Mapped[str]             = mapped_column(String(200), nullable=False)
+    preferred_visit_time: Mapped[str] = mapped_column(String(80), nullable=True)
 
     priority: Mapped[WOPriority]  = mapped_column(
         Enum(WOPriority, name="wo_priority", values_callable=enum_values), nullable=False
@@ -82,6 +86,9 @@ class WorkOrder(Base):
     # People
     raised_by_id: Mapped[int]     = mapped_column(
         Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True,
+    )
+    client_id: Mapped[int]        = mapped_column(
+        Integer, ForeignKey("clients.id", ondelete="RESTRICT"), nullable=False, index=True,
     )
     contractor_id: Mapped[int]    = mapped_column(
         Integer, ForeignKey("contractors.id", ondelete="SET NULL"), nullable=True, index=True,
@@ -114,6 +121,7 @@ class WorkOrder(Base):
     raised_by_user: Mapped["User"] = relationship(  # noqa: F821
         "User", back_populates="work_orders_raised", foreign_keys=[raised_by_id],
     )
+    client_account: Mapped["ClientAccount"] = relationship("ClientAccount", back_populates="work_orders")  # noqa: F821
     contractor: Mapped["Contractor"] = relationship(  # noqa: F821
         "Contractor", back_populates="work_orders",
     )
@@ -131,6 +139,11 @@ class WorkOrder(Base):
     notifications: Mapped[list["Notification"]] = relationship(
         "Notification", back_populates="work_order",
         cascade="all, delete-orphan",
+    )
+    attachments: Mapped[list["WorkOrderAttachment"]] = relationship(
+        "WorkOrderAttachment", back_populates="work_order",
+        cascade="all, delete-orphan",
+        order_by="WorkOrderAttachment.created_at",
     )
 
     @property
@@ -164,6 +177,24 @@ class ActivityLog(Base):
     # Relationships
     work_order: Mapped["WorkOrder"] = relationship("WorkOrder", back_populates="activity")
     user: Mapped["User"] = relationship("User", back_populates="activity_log")  # noqa: F821
+
+
+class WorkOrderAttachment(Base):
+    __tablename__ = "work_order_attachments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    work_order_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("work_orders.id", ondelete="CASCADE"), nullable=False, index=True,
+    )
+    file_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False,
+    )
+
+    work_order: Mapped["WorkOrder"] = relationship("WorkOrder", back_populates="attachments")
 
 
 class Notification(Base):

@@ -3,7 +3,7 @@ from typing import Optional
 
 from pydantic import BaseModel, EmailStr, field_validator
 
-from app.models.user import UserRole
+from app.models.user import ClientSubRole, UserRole
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -28,6 +28,22 @@ class UserCreate(BaseModel):
     role: UserRole
     phone: Optional[str] = None
     contractor_id: Optional[int] = None
+    client_id: Optional[int] = None
+    client_subrole: Optional[ClientSubRole] = None
+
+    @field_validator("password")
+    @classmethod
+    def password_min_length(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        return v
+
+
+class InviteAcceptRequest(BaseModel):
+    token: str
+    full_name: str
+    password: str
+    phone: Optional[str] = None
 
     @field_validator("password")
     @classmethod
@@ -50,6 +66,8 @@ class UserOut(BaseModel):
     role: UserRole
     phone: Optional[str]
     contractor_id: Optional[int]
+    client_id: Optional[int]
+    client_subrole: Optional[str] = None
     is_active: bool
     created_at: datetime
 
@@ -61,6 +79,7 @@ class UserSummary(BaseModel):
     full_name: str
     role: UserRole
     email: str
+    client_subrole: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

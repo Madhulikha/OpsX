@@ -1,43 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
-import { CATEGORIES } from '../data/mockData';
-
-const REQUEST_TEMPLATES = [
-  {
-    title: 'Electrical issue',
-    values: {
-      title: 'Lighting fault',
-      category: 'Electrical',
-      area: 'Common Area',
-      priority: 'Med',
-      description: 'Lights are not working consistently and need inspection.',
-      slaHours: 24,
-    },
-  },
-  {
-    title: 'HVAC complaint',
-    values: {
-      title: 'AC not cooling',
-      category: 'HVAC',
-      area: 'Office / Cabin',
-      priority: 'High',
-      description: 'Cooling has dropped significantly and the room is getting warm.',
-      slaHours: 12,
-    },
-  },
-  {
-    title: 'Water leakage',
-    values: {
-      title: 'Leakage near ceiling',
-      category: 'Plumbing',
-      area: 'Restroom / Corridor',
-      priority: 'High',
-      description: 'Water seepage is visible and needs urgent attention.',
-      slaHours: 6,
-    },
-  },
-];
+import { CATEGORIES, REQUEST_AREAS, REQUEST_CATEGORY_OPTIONS } from '../data/mockData';
 
 export default function RaiseRequest() {
   const navigate = useNavigate();
@@ -46,15 +10,48 @@ export default function RaiseRequest() {
   const [form, setForm] = useState({
     title: '',
     category: 'Electrical',
+    subCategory: REQUEST_CATEGORY_OPTIONS.Electrical[0],
     area: '',
     priority: 'Med',
-    due: '',
+    preferredVisitTime: '',
     description: '',
-    slaHours: 24,
+    photos: [],
   });
 
   function set(field, value) {
-    setForm(prev => ({ ...prev, [field]: value }));
+    setForm(prev => ({
+      ...prev,
+      [field]: value,
+      ...(field === 'category' ? { subCategory: REQUEST_CATEGORY_OPTIONS[value]?.[0] || '' } : {}),
+    }));
+  }
+
+  function handlePhotoChange(event) {
+    const selected = Array.from(event.target.files || []);
+    const next = [...form.photos, ...selected].slice(0, 5);
+    const invalid = next.find(file => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type));
+    const oversized = next.find(file => file.size > 5 * 1024 * 1024);
+
+    if (selected.length + form.photos.length > 5) {
+      showToast('Upload up to 5 photos per request', 'danger');
+    }
+    if (invalid) {
+      showToast('Only JPG, PNG, or WebP photos are allowed', 'danger');
+      event.target.value = '';
+      return;
+    }
+    if (oversized) {
+      showToast('Each photo must be 5 MB or smaller', 'danger');
+      event.target.value = '';
+      return;
+    }
+
+    set('photos', next);
+    event.target.value = '';
+  }
+
+  function removePhoto(index) {
+    set('photos', form.photos.filter((_, photoIndex) => photoIndex !== index));
   }
 
   async function handleSubmit(event) {
@@ -67,8 +64,20 @@ export default function RaiseRequest() {
       showToast('Please add the location or area', 'danger');
       return;
     }
+    if (!form.subCategory.trim()) {
+      showToast('Please choose a sub category', 'danger');
+      return;
+    }
+    if (!form.preferredVisitTime.trim()) {
+      showToast('Please add a preferred time for the workman to come', 'danger');
+      return;
+    }
     if (!form.description.trim()) {
       showToast('Please describe the issue so the team can act quickly', 'danger');
+      return;
+    }
+    if (form.photos.length === 0) {
+      showToast('Please upload at least one photo of the issue', 'danger');
       return;
     }
 
@@ -93,22 +102,6 @@ export default function RaiseRequest() {
         </div>
       </div>
 
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-body">
-          <div className="enduser-template-row">
-            {REQUEST_TEMPLATES.map(template => (
-              <button
-                key={template.title}
-                className="enduser-template-btn"
-                type="button"
-                onClick={() => setForm(prev => ({ ...prev, ...template.values }))}
-              >
-                {template.title}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
 
       <div className="card">
         <div className="card-body">
@@ -121,33 +114,36 @@ export default function RaiseRequest() {
                 value={form.title}
                 onChange={event => set('title', event.target.value)}
                 disabled={submitting || dataLoading}
+                required
               />
             </div>
 
             <div className="form-row">
               <div className="form-group">
-                <label className="form-label">Category</label>
+                <label className="form-label">Category *</label>
                 <select
                   className="form-input"
                   value={form.category}
                   onChange={event => set('category', event.target.value)}
                   disabled={submitting || dataLoading}
+                  required
                 >
                   {CATEGORIES.map(category => <option key={category}>{category}</option>)}
                 </select>
               </div>
 
               <div className="form-group">
-                <label className="form-label">Priority</label>
+                <label className="form-label">Sub Category *</label>
                 <select
                   className="form-input"
-                  value={form.priority}
-                  onChange={event => set('priority', event.target.value)}
+                  value={form.subCategory}
+                  onChange={event => set('subCategory', event.target.value)}
                   disabled={submitting || dataLoading}
+                  required
                 >
-                  <option value="High">High</option>
-                  <option value="Med">Medium</option>
-                  <option value="Low">Low</option>
+                  {(REQUEST_CATEGORY_OPTIONS[form.category] || []).map(subCategory => (
+                    <option key={subCategory} value={subCategory}>{subCategory}</option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -155,41 +151,44 @@ export default function RaiseRequest() {
             <div className="form-row">
               <div className="form-group">
                 <label className="form-label">Area / Location *</label>
-                <input
+                <select
                   className="form-input"
-                  placeholder="For example: Block B2 gate, Reception desk, Pantry"
                   value={form.area}
                   onChange={event => set('area', event.target.value)}
                   disabled={submitting || dataLoading}
-                />
+                  required
+                >
+                  <option value="">Select area</option>
+                  {REQUEST_AREAS.map(area => <option key={area} value={area}>{area}</option>)}
+                </select>
               </div>
 
               <div className="form-group">
-                <label className="form-label">Preferred Due Date</label>
+                <label className="form-label">Preferred Time *</label>
                 <input
                   className="form-input"
-                  type="date"
-                  value={form.due}
-                  onChange={event => set('due', event.target.value)}
+                  placeholder="For example: 10 AM - 12 PM, after lunch, anytime today"
+                  value={form.preferredVisitTime}
+                  onChange={event => set('preferredVisitTime', event.target.value)}
                   disabled={submitting || dataLoading}
+                  required
                 />
               </div>
             </div>
 
             <div className="form-row">
               <div className="form-group">
-                <label className="form-label">SLA Expectation</label>
+                <label className="form-label">Priority *</label>
                 <select
                   className="form-input"
-                  value={form.slaHours}
-                  onChange={event => set('slaHours', Number(event.target.value))}
+                  value={form.priority}
+                  onChange={event => set('priority', event.target.value)}
                   disabled={submitting || dataLoading}
+                  required
                 >
-                  <option value={4}>Urgent - 4 hours</option>
-                  <option value={6}>Critical - 6 hours</option>
-                  <option value={12}>High - 12 hours</option>
-                  <option value={24}>Standard - 24 hours</option>
-                  <option value={48}>Low - 48 hours</option>
+                  <option value="High">High</option>
+                  <option value="Med">Medium</option>
+                  <option value="Low">Low</option>
                 </select>
               </div>
             </div>
@@ -202,7 +201,32 @@ export default function RaiseRequest() {
                 value={form.description}
                 onChange={event => set('description', event.target.value)}
                 disabled={submitting || dataLoading}
+                required
               />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Photos *</label>
+              <input
+                className="form-input"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                multiple
+                onChange={handlePhotoChange}
+                disabled={submitting || dataLoading}
+                required={form.photos.length === 0}
+              />
+              <div className="text-xs text-2" style={{ marginTop: 6 }}>Upload up to 5 JPG, PNG, or WebP photos. Max 5 MB each.</div>
+              {form.photos.length > 0 && (
+                <div className="request-photo-grid">
+                  {form.photos.map((photo, index) => (
+                    <div key={`${photo.name}-${photo.lastModified}`} className="request-photo-preview">
+                      <img src={URL.createObjectURL(photo)} alt={photo.name} />
+                      <button className="btn btn-sm" type="button" onClick={() => removePhoto(index)}>Remove</button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="enduser-request-footer">

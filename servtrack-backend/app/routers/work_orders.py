@@ -1,15 +1,17 @@
 from typing import Optional, List
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.models.work_order import WOCategory, WOPriority
 from app.models.user import User
 from app.schemas.work_order import (
     WorkOrderCreate, WorkOrderUpdate, WorkOrderOut, WorkOrderSummary,
-    StatusTransitionRequest, DashboardStats,
+    StatusTransitionRequest, DashboardStats, AdditionalDetailsRequest,
 )
+from app.services.upload_service import save_work_order_photos, validate_work_order_photos
 from app.services import work_order_service as svc
 
 router = APIRouter(prefix="/work-orders", tags=["Work Orders"])
@@ -50,6 +52,65 @@ def create_work_order(
     current_user: User = Depends(get_current_user),
 ):
     return svc.create_work_order(db, payload, current_user)
+
+
+@router.post("/with-photos", response_model=WorkOrderOut, status_code=201)
+async def create_work_order_with_photos(
+    title: str = Form(...),
+    description: str = Form(...),
+    category: WOCategory = Form(...),
+    sub_category: Optional[str] = Form(None),
+    area: str = Form(...),
+    priority: WOPriority = Form(...),
+    preferred_visit_time: Optional[str] = Form(None),
+    sla_hours: int = Form(24),
+    due_date: Optional[str] = Form(None),
+    photos: List[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from datetime import datetime
+
+    if not description.strip():
+        raise HTTPException(status_code=422, detail="Description is required")
+    await validate_work_order_photos(photos)
+    parsed_due_date = datetime.fromisoformat(due_date.replace("Z", "+00:00")) if due_date else None
+    payload = WorkOrderCreate(
+        title=title,
+        description=description,
+        category=category,
+        sub_category=sub_category,
+        area=area,
+        priority=priority,
+        preferred_visit_time=preferred_visit_time,
+        sla_hours=sla_hours,
+        due_date=parsed_due_date,
+    )
+    wo = svc.create_work_order(db, payload, current_user)
+    attachments = await save_work_order_photos(wo.id, photos)
+    for attachment in attachments:
+        db.add(attachment)
+    db.commit()
+    return svc.get_work_order_by_id(db, wo.id, current_user)
+
+
+@router.post("/{wo_id}/escalate", response_model=WorkOrderOut)
+def request_escalation(
+    wo_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return svc.request_user_escalation(db, wo_id, current_user)
+
+
+@router.post("/{wo_id}/additional-details", response_model=WorkOrderOut)
+def add_additional_details(
+    wo_id: int,
+    payload: AdditionalDetailsRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return svc.add_request_details(db, wo_id, payload.note, current_user)
 
 
 # ── Get one ───────────────────────────────────────────────────────────────────

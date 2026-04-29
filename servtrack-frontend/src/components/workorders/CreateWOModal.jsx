@@ -21,6 +21,8 @@ export default function CreateWOModal({ onClose }) {
     setForm(prev => ({ ...prev, [field]: value }));
   }
 
+  const selectedContractor = contractors.find(contractor => Number(contractor.id) === Number(form.contractorId));
+
   async function handleSubmit() {
     if (!form.title.trim()) return alert('Title is required');
     if (!form.area.trim())  return alert('Area is required');
@@ -91,6 +93,11 @@ export default function CreateWOModal({ onClose }) {
                 <option value="">Unassigned</option>
                 {contractors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
+              {selectedContractor && !selectedContractor.has_login && (
+                <div className="text-xs text-2" style={{ marginTop: 6 }}>
+                  This contractor is linked but not activated yet. A contractor login is still needed before work can progress on their side.
+                </div>
+              )}
             </div>
             <div className="form-group">
               <label className="form-label">Due Date</label>

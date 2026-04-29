@@ -4,10 +4,23 @@ import StatusBadge from '../components/workorders/StatusBadge';
 import WODetailModal from '../components/workorders/WODetailModal';
 
 export default function Approvals() {
-  const { workOrders } = useApp();
+  const { currentUser, workOrders } = useApp();
   const [selectedWO, setSelectedWO] = useState(null);
 
-  const pending = workOrders.filter(w => w.status === 'pending' || w.status === 'escalated');
+  function approvalStage(wo) {
+    if (wo.status === 'escalated') return 'commandant_engineer';
+    if (!['open', 'rejected'].includes(wo.status)) return 'none';
+    const ageHours = (Date.now() - new Date(wo.createdAt).getTime()) / 3600000;
+    if (ageHours >= 48) return 'commandant_engineer';
+    if (ageHours >= 24) return 'assistant_engineer';
+    return 'junior_engineer';
+  }
+
+  const clientSubrole = currentUser?.client_subrole || 'junior_engineer';
+  const pending = workOrders.filter(w => {
+    if (['pending'].includes(w.status)) return clientSubrole === 'junior_engineer';
+    return approvalStage(w) === clientSubrole;
+  });
 
   return (
     <div>
@@ -36,7 +49,7 @@ export default function Approvals() {
                 <th>Category</th>
                 <th>Priority</th>
                 <th>Status</th>
-                <th>Due</th>
+                  <th>Preferred Time</th>
                 <th>Action</th>
               </tr>
             </thead>
@@ -51,7 +64,7 @@ export default function Approvals() {
                   <td style={{ color:'var(--text-2)' }}>{wo.category}</td>
                   <td className={`priority-${wo.priority.toLowerCase()}`}>{wo.priority}</td>
                   <td><StatusBadge status={wo.status} /></td>
-                  <td style={{ color: wo.slaBreached ? 'var(--danger)' : 'var(--text-2)' }}>{wo.due}</td>
+                  <td style={{ color:'var(--text-2)' }}>{wo.preferredVisitTime || '—'}</td>
                   <td onClick={e => e.stopPropagation()}>
                     <button className="btn btn-sm btn-primary" onClick={() => setSelectedWO(wo)}>
                       Review →

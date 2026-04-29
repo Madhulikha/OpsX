@@ -6,7 +6,7 @@ import WODetailModal from '../components/workorders/WODetailModal';
 import './Dashboard.css';
 
 export default function Dashboard() {
-  const { role, workOrders, dashboardStats, contractors, notifications } = useApp();
+  const { role, currentUser, workOrders, dashboardStats, contractors, notifications } = useApp();
   const navigate = useNavigate();
   const [selectedWO, setSelectedWO] = useState(null);
 
@@ -40,6 +40,17 @@ export default function Dashboard() {
       subCls: unreadNotifications.length > 0 ? 'warn' : '',
     },
   ]), [unreadNotifications.length, workOrders]);
+
+  function approvalStage(wo) {
+    if (wo.status === 'escalated') return 'commandant_engineer';
+    if (!['open', 'rejected'].includes(wo.status)) return 'none';
+    const ageHours = (Date.now() - new Date(wo.createdAt).getTime()) / 3600000;
+    if (ageHours >= 48) return 'commandant_engineer';
+    if (ageHours >= 24) return 'assistant_engineer';
+    return 'junior_engineer';
+  }
+
+  const clientSubrole = currentUser?.client_subrole || 'junior_engineer';
 
   const statsByRole = {
     client: [
@@ -191,6 +202,180 @@ export default function Dashboard() {
         {selectedWO && (
           <WODetailModal
             wo={workOrders.find(request => request.id === selectedWO.id)}
+            onClose={() => setSelectedWO(null)}
+          />
+        )}
+      </div>
+    );
+  }
+
+  if (role === 'client') {
+    const newRequests = workOrders.filter(wo => approvalStage(wo) === clientSubrole).slice(0, 5);
+    const attentionItems = workOrders.filter(wo => ['pending'].includes(wo.status) || approvalStage(wo) === clientSubrole).slice(0, 5);
+    const recentNotifications = notifications.slice(0, 5);
+
+    return (
+      <div>
+        <div className="stats-grid" style={{ gridTemplateColumns: `repeat(${stats.length}, 1fr)` }}>
+          {stats.map(stat => (
+            <div className="stat-card" key={stat.label}>
+              <div className="stat-label">{stat.label}</div>
+              <div className="stat-value">{stat.value}</div>
+              <div className={`stat-sub ${stat.subCls}`}>{stat.sub}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="enduser-dashboard-grid">
+          <div className="card">
+            <div className="card-header">
+              <span className="card-title">Incoming Requests</span>
+              <button className="btn btn-sm" onClick={() => navigate('/work-orders')}>Open queue</button>
+            </div>
+            <div className="card-body">
+              {newRequests.length === 0 ? (
+                <div className="empty-state" style={{ padding: '32px 12px' }}>
+                  <div className="empty-title">No new requests right now</div>
+                  <div className="empty-sub">Fresh end-user requests will appear here as they come in.</div>
+                </div>
+              ) : (
+                <div className="enduser-request-list">
+                  {newRequests.map(request => (
+                    <button key={request.id} className="enduser-request-card" onClick={() => setSelectedWO(request)}>
+                      <div className="enduser-request-top">
+                        <span className="enduser-request-ref">{request.refNumber}</span>
+                        <StatusBadge status={request.status} />
+                      </div>
+                      <div className="enduser-request-title">{request.title}</div>
+                      <div className="enduser-request-meta">{request.raisedBy} · {request.area}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="card-header">
+              <span className="card-title">Needs Attention</span>
+              <button className="btn btn-sm" onClick={() => navigate('/approvals')}>Review</button>
+            </div>
+            <div className="card-body">
+              {attentionItems.length === 0 ? (
+                <div className="empty-state" style={{ padding: '32px 12px' }}>
+                  <div className="empty-title">All clear</div>
+                  <div className="empty-sub">No approvals or escalations need your action right now.</div>
+                </div>
+              ) : (
+                <div className="enduser-request-list">
+                  {attentionItems.map(item => (
+                    <button key={item.id} className="enduser-request-card" onClick={() => setSelectedWO(item)}>
+                      <div className="enduser-request-top">
+                        <span className="enduser-request-ref">{item.refNumber}</span>
+                        <StatusBadge status={item.status} />
+                      </div>
+                      <div className="enduser-request-title">{item.title}</div>
+                      <div className="enduser-request-meta">{item.contractor} · {item.area}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="enduser-dashboard-grid">
+          <div className="card">
+            <div className="card-header">
+              <span className="card-title">Recent Work Orders</span>
+              <button className="btn btn-sm" onClick={() => navigate('/work-orders')}>View all</button>
+            </div>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Work Order</th>
+                  <th>Raised By</th>
+                  <th>Priority</th>
+                  <th>Status</th>
+                  <th>Due</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentWOs.map(wo => (
+                  <tr key={wo.id} onClick={() => setSelectedWO(wo)}>
+                    <td>
+                      <span style={{ fontSize: 11, color: 'var(--text-3)', display: 'block' }}>{wo.refNumber}</span>
+                      <span style={{ fontWeight: 500 }}>{wo.title}</span>
+                    </td>
+                    <td style={{ color: 'var(--text-2)' }}>{wo.raisedBy}</td>
+                    <td className={`priority-${wo.priority.toLowerCase()}`}>{wo.priority}</td>
+                    <td><StatusBadge status={wo.status} /></td>
+                    <td style={{ color: wo.slaBreached ? 'var(--danger)' : 'var(--text-2)', fontWeight: wo.slaBreached ? 600 : 400 }}>{wo.due}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="card">
+            <div className="card-header">
+              <span className="card-title">Live Updates</span>
+              <button className="btn btn-sm" onClick={() => navigate('/notifications')}>See all</button>
+            </div>
+            <div className="card-body">
+              {recentNotifications.length === 0 ? (
+                <div className="empty-state" style={{ padding: '32px 12px' }}>
+                  <div className="empty-title">No notifications yet</div>
+                  <div className="empty-sub">Client notifications about requests, approvals, and breaches will appear here.</div>
+                </div>
+              ) : (
+                <div className="enduser-notification-list">
+                  {recentNotifications.map(notification => (
+                    <div key={notification.id} className={`enduser-notification-item${notification.read ? '' : ' unread'}`}>
+                      <div className="enduser-notification-title">{notification.title}</div>
+                      <div className="enduser-notification-body">{notification.body}</div>
+                      <div className="enduser-notification-time">{notification.time}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="card-header">
+            <span className="card-title">SLA Performance — April 2026</span>
+          </div>
+          <div className="card-body">
+            <div className="sla-summary-grid">
+              <div className="sla-kpi">
+                <div className="sla-kpi-label">Within SLA</div>
+                <div className="sla-kpi-value" style={{ color: 'var(--success)' }}>{dashboardStats?.sla_compliance_pct ?? 0}%</div>
+                <div className="sla-kpi-sub">of closed work orders</div>
+              </div>
+              <div className="sla-kpi">
+                <div className="sla-kpi-label">Avg Resolution</div>
+                <div className="sla-kpi-value">{dashboardStats?.avg_resolution_hours ?? 0}h</div>
+                <div className="sla-kpi-sub">average close time</div>
+              </div>
+              <div className="sla-kpi">
+                <div className="sla-kpi-label">Breaches</div>
+                <div className="sla-kpi-value" style={{ color: 'var(--danger)' }}>{dashboardStats?.sla_breaches ?? 0}</div>
+                <div className="sla-kpi-sub">requires action</div>
+              </div>
+              <div className="sla-kpi">
+                <div className="sla-kpi-label">Top Contractor</div>
+                <div className="sla-kpi-value" style={{ fontSize: 18 }}>{topContractor?.name || '—'}</div>
+                <div className="sla-kpi-sub">{topContractor ? `${topContractor.rating.toFixed(1)} ★ rating` : 'No contractor data'}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {selectedWO && (
+          <WODetailModal
+            wo={workOrders.find(w => w.id === selectedWO.id)}
             onClose={() => setSelectedWO(null)}
           />
         )}
