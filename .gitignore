@@ -1,6 +1,18 @@
-uploads/
-servtrack-backend/uploads/
+# Backend
 __pycache__/
 *.pyc
+uploads/
+servtrack-backend/uploads/
+servtrack-backend/.env
+
+# Frontend
+node_modules/
+build/
+.cache/
+servtrack-frontend/node_modules/
+servtrack-frontend/build/
+servtrack-frontend/.cache/
+
+
+# OS
 .DS_Store
-/servtrack-frontend/node_modules/
