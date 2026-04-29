@@ -1,0 +1,6 @@
+uploads/
+servtrack-backend/uploads/
+__pycache__/
+*.pyc
+.DS_Store
+/servtrack-frontend/node_modules/
