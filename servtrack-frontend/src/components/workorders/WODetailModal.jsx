@@ -1,10 +1,20 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { CATEGORIES, STATUS_FLOW, STATUS_CONFIG } from '../../data/mockData';
 import StatusBadge from './StatusBadge';
 import './WODetailModal.css';
 
-const PRIORITIES = ['High', 'Med', 'Low'];
+const PRIORITIES = ['High', 'Med', 'Low', 'Major'];
+
+const PRIORITY_DUE_HOURS = { High: 15 * 24, Med: 72, Low: 48 };
+
+function autoDueDateFromPriority(priority) {
+  const hours = PRIORITY_DUE_HOURS[priority];
+  if (!hours) return '';
+  const d = new Date();
+  d.setHours(d.getHours() + hours);
+  return d.toISOString().slice(0, 10);
+}
 
 function dateInputValue(value) {
   if (!value || value === '—') return '';
@@ -19,10 +29,11 @@ function normalizePatch(form, liveWO, role) {
   const workmanId = form.workmanId ? Number(form.workmanId) : null;
   const dueDate = form.dueDate ? `${form.dueDate}T00:00:00Z` : null;
 
+  const supervisorCanReassign = role === 'supervisor' && ['assigned', 'inprogress'].includes(liveWO.status);
   const allowedByRole = {
-    client: ['title', 'description', 'category', 'area', 'priority', 'slaHours', 'dueDate', 'contractorId', 'supervisorId', 'workmanId'],
-    contractor: ['title', 'description', 'category', 'area', 'priority', 'dueDate', 'supervisorId', 'workmanId'],
-    supervisor: ['dueDate', 'workmanId'],
+    client: ['priority', 'dueDate', 'contractorId'],
+    contractor: ['dueDate', 'supervisorId', 'workmanId'],
+    supervisor: supervisorCanReassign ? ['dueDate', 'workmanId'] : [],
   };
 
   const allowed = allowedByRole[role] || [];
@@ -32,7 +43,6 @@ function normalizePatch(form, liveWO, role) {
   if (allowed.includes('category') && form.category !== liveWO.category) patch.category = form.category;
   if (allowed.includes('area') && form.area !== liveWO.area) patch.area = form.area;
   if (allowed.includes('priority') && form.priority !== liveWO.priority) patch.priority = form.priority;
-  if (allowed.includes('slaHours') && Number(form.slaHours) !== liveWO.slaHours) patch.sla_hours = Number(form.slaHours);
   if (allowed.includes('dueDate') && dueDate !== (liveWO.dueDate || null)) patch.due_date = dueDate;
   if (allowed.includes('contractorId') && contractorId !== (liveWO.contractorId || null)) patch.contractor_id = contractorId;
   if (allowed.includes('supervisorId') && supervisorId !== (liveWO.supervisorId || null)) patch.supervisor_id = supervisorId;
@@ -55,6 +65,7 @@ export default function WODetailModal({ wo, onClose }) {
     updateWOStatus,
     escalateRequest,
     addRequestDetails,
+    completeWorkOrder,
     showToast,
   } = useApp();
 
@@ -65,14 +76,16 @@ export default function WODetailModal({ wo, onClose }) {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(null);
 
+  const [workmanNote, setWorkmanNote] = useState('');
+  const [completionPhotos, setCompletionPhotos] = useState([]);
+  const photoInputRef = useRef(null);
+
   const liveWO = useMemo(
     () => (wo ? workOrders.find(item => item.id === wo.id) || wo : null),
     [wo, workOrders]
   );
 
   const currentIdx = STATUS_FLOW.indexOf(liveWO?.status);
-  const slaPct = liveWO ? Math.min(Math.round((liveWO.elapsedHours / liveWO.slaHours) * 100), 100) : 0;
-  const slaColor = slaPct >= 100 ? 'var(--danger)' : slaPct >= 80 ? 'var(--warning)' : 'var(--success)';
 
   const selectedContractorId = useMemo(() => {
     if (role === 'contractor' || role === 'supervisor') return currentUser?.contractor_id || liveWO?.contractorId || null;
@@ -85,7 +98,12 @@ export default function WODetailModal({ wo, onClose }) {
   const supervisors = usersByQuery[supervisorQueryKey] || [];
   const workmen = usersByQuery[workmanQueryKey] || [];
 
-  const canEdit = ['client', 'contractor', 'supervisor'].includes(role);
+  const supervisorCanReassign = role === 'supervisor' && ['assigned', 'inprogress'].includes(liveWO.status);
+  const canEdit = (
+    (role === 'client' && liveWO.status === 'open') ||
+    (role === 'contractor' && ['open', 'assigned'].includes(liveWO.status)) ||
+    supervisorCanReassign
+  );
   const backendOrigin = apiBaseUrl.replace(/\/api\/v1\/?$/, '');
 
   useEffect(() => {
@@ -121,7 +139,13 @@ export default function WODetailModal({ wo, onClose }) {
   if (!liveWO || !form) return null;
 
   function set(field, value) {
-    setForm(prev => ({ ...prev, [field]: value }));
+    setForm(prev => {
+      const next = { ...prev, [field]: value };
+      if (field === 'priority' && role === 'client' && value !== 'Major') {
+        next.dueDate = autoDueDateFromPriority(value);
+      }
+      return next;
+    });
   }
 
   const patch = normalizePatch(form, liveWO, role);
@@ -132,7 +156,7 @@ export default function WODetailModal({ wo, onClose }) {
     setSaving(true);
     try {
       const updated = await updateWorkOrder(liveWO.id, patch);
-      if (!quiet) showToast('Work order details updated', 'success');
+      if (!quiet) showToast('Service request details updated', 'success');
       return updated;
     } catch (error) {
       showToast(error.message || 'Could not update work order', 'danger');
@@ -178,9 +202,28 @@ export default function WODetailModal({ wo, onClose }) {
     try {
       await addRequestDetails(liveWO.id, additionalDetails.trim());
       showToast('Additional details added', 'success');
-      onClose();
+      setShowDetailsInput(false);
+      setAdditionalDetails('');
     } catch (error) {
       showToast(error.message || 'Could not add details', 'danger');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleCompleteWork() {
+    if (completionPhotos.length === 0) {
+      showToast('Please upload at least one completion photo before marking as done', 'danger');
+      return;
+    }
+    setSaving(true);
+    try {
+      const note = workmanNote.trim() || 'Work completed by workman';
+      await completeWorkOrder(liveWO.id, completionPhotos, note);
+      showToast('Work completed — photos uploaded, pending QC', 'success');
+      onClose();
+    } catch (error) {
+      showToast(error.message || 'Could not complete work', 'danger');
     } finally {
       setSaving(false);
     }
@@ -284,25 +327,49 @@ export default function WODetailModal({ wo, onClose }) {
         );
       }
       if (liveWO.status === 'inprogress') {
-        return (
-          <button className="btn btn-primary" disabled={saving} onClick={() => runTransition('qc', 'Submitted for QC review')}>
-            Submit for QC
-          </button>
-        );
+        return null;
       }
       if (liveWO.status === 'qc') {
-        return (
-          <button className="btn btn-primary" disabled={saving} onClick={() => runTransition('pending', 'Submitted for client approval', 'All checks passed')}>
-            Pass QC
-          </button>
+        return showRejectInput ? (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flex: 1 }}>
+            <input
+              className="form-input"
+              style={{ flex: 1, padding: '5px 10px', fontSize: 12 }}
+              placeholder="Reason for QC rejection..."
+              value={rejectNote}
+              onChange={event => setRejectNote(event.target.value)}
+            />
+            <button
+              className="btn btn-danger btn-sm"
+              disabled={saving || !rejectNote.trim()}
+              onClick={() => runTransition('inprogress', 'QC rejected and sent back for rework', rejectNote)}
+            >
+              Confirm Reject
+            </button>
+            <button className="btn btn-sm" onClick={() => setShowRejectInput(false)}>Cancel</button>
+          </div>
+        ) : (
+          <>
+            <button className="btn btn-primary" disabled={saving} onClick={() => runTransition('pending', 'Submitted for client approval', 'All checks passed')}>
+              Pass QC
+            </button>
+            <button className="btn btn-danger" disabled={saving} onClick={() => setShowRejectInput(true)}>
+              Reject QC
+            </button>
+          </>
         );
       }
     }
 
     if (role === 'workman' && liveWO.status === 'inprogress') {
       return (
-        <button className="btn btn-primary" disabled={saving} onClick={() => runTransition('qc', 'Work marked complete — pending QC')}>
-          Mark as Done
+        <button
+          className="btn btn-success"
+          disabled={saving || completionPhotos.length === 0}
+          onClick={handleCompleteWork}
+          title={completionPhotos.length === 0 ? 'Upload at least 1 completion photo first' : ''}
+        >
+          {saving ? 'Submitting...' : `Complete Work${completionPhotos.length > 0 ? ` (${completionPhotos.length} photo${completionPhotos.length !== 1 ? 's' : ''})` : ''}`}
         </button>
       );
     }
@@ -310,9 +377,9 @@ export default function WODetailModal({ wo, onClose }) {
     if (role === 'enduser' && liveWO.status !== 'closed') {
       return (
         <>
-          {(liveWO.status === 'rejected' || (liveWO.status === 'open' && liveWO.priority === 'Low')) && (
-            <button className="btn" disabled={saving} onClick={() => setShowDetailsInput(true)}>
-              Add Details
+          {(liveWO.status === 'open' || liveWO.status === 'rejected') && (
+            <button className="btn" disabled={saving} onClick={() => setShowDetailsInput(prev => !prev)}>
+              {liveWO.status === 'rejected' ? 'Add Details & Re-open' : 'Update Description'}
             </button>
           )}
           <button className="btn btn-danger" disabled={saving} onClick={handleEscalate}>
@@ -339,13 +406,13 @@ export default function WODetailModal({ wo, onClose }) {
         <div className="modal-body">
           {liveWO.status === 'escalated' && (
             <div className="alert alert-danger">
-              This work order breached its {liveWO.slaHours}h SLA and has been auto-escalated.
+              This request has been escalated and requires immediate attention.
             </div>
           )}
 
-          {liveWO.status !== 'closed' && liveWO.status !== 'escalated' && slaPct >= 80 && (
-            <div className="alert alert-warning">
-              {slaPct}% of the {liveWO.slaHours}h SLA has elapsed. Act promptly.
+          {liveWO.status !== 'closed' && liveWO.status !== 'escalated' && liveWO.slaBreached && (
+            <div className="alert alert-danger">
+              This request is overdue — it has passed its due date.
             </div>
           )}
 
@@ -389,66 +456,41 @@ export default function WODetailModal({ wo, onClose }) {
 
           {canEdit && (
             <>
-              <div className="section-heading">Assignments & Details</div>
+              <div className="section-heading">
+                {role === 'client' ? 'Prioritise & Assign' : role === 'contractor' ? 'Assign Team' : 'Assignments'}
+              </div>
               <div style={{ display: 'grid', gap: 12, marginBottom: 18 }}>
-                {(role === 'client' || role === 'contractor') && (
-                  <div className="form-group">
-                    <label className="form-label">Title</label>
-                    <input className="form-input" value={form.title} onChange={event => set('title', event.target.value)} />
-                  </div>
-                )}
 
-                {(role === 'client' || role === 'contractor') && (
+                {role === 'client' && (
                   <div className="form-row">
-                    <div className="form-group">
-                      <label className="form-label">Category</label>
-                      <select className="form-input" value={form.category} onChange={event => set('category', event.target.value)}>
-                        {CATEGORIES.map(category => <option key={category}>{category}</option>)}
-                      </select>
-                    </div>
                     <div className="form-group">
                       <label className="form-label">Priority</label>
                       <select className="form-input" value={form.priority} onChange={event => set('priority', event.target.value)}>
                         {PRIORITIES.map(priority => <option key={priority}>{priority}</option>)}
                       </select>
                     </div>
+                    <div className="form-group">
+                      <label className="form-label">
+                        Due Date{form.priority !== 'Major' ? ' (auto)' : ' *'}
+                      </label>
+                      <input
+                        className="form-input"
+                        type="date"
+                        value={form.dueDate}
+                        onChange={event => set('dueDate', event.target.value)}
+                        disabled={form.priority !== 'Major'}
+                      />
+                    </div>
                   </div>
                 )}
-
-                {(role === 'client' || role === 'contractor') && (
-                  <div className="form-group">
-                    <label className="form-label">Area</label>
-                    <input className="form-input" value={form.area} onChange={event => set('area', event.target.value)} />
-                  </div>
-                )}
-
-                <div className="form-row">
-                  {(role === 'client' || role === 'contractor' || role === 'supervisor') && (
-                    <div className="form-group">
-                      <label className="form-label">Due Date</label>
-                      <input className="form-input" type="date" value={form.dueDate} onChange={event => set('dueDate', event.target.value)} />
-                    </div>
-                  )}
-
-                  {role === 'client' && (
-                    <div className="form-group">
-                      <label className="form-label">SLA Target (hours)</label>
-                      <input className="form-input" type="number" min="1" value={form.slaHours} onChange={event => set('slaHours', event.target.value)} />
-                    </div>
-                  )}
-                </div>
 
                 {role === 'client' && (
                   <div className="form-group">
-                    <label className="form-label">Contractor</label>
+                    <label className="form-label">Assign Contractor</label>
                     <select
                       className="form-input"
                       value={form.contractorId}
-                      onChange={event => {
-                        set('contractorId', event.target.value);
-                        set('supervisorId', '');
-                        set('workmanId', '');
-                      }}
+                      onChange={event => set('contractorId', event.target.value)}
                     >
                       <option value="">Select contractor</option>
                       {contractors.map(contractor => (
@@ -457,13 +499,13 @@ export default function WODetailModal({ wo, onClose }) {
                     </select>
                     {selectedContractor && !selectedContractor.has_login && (
                       <div className="text-xs text-2" style={{ marginTop: 6 }}>
-                        This contractor is linked but still pending activation. A contractor-side login is needed before they can start working here.
+                        This contractor is linked but still pending activation.
                       </div>
                     )}
                   </div>
                 )}
 
-                {(role === 'client' || role === 'contractor') && selectedContractorId && (
+                {role === 'contractor' && selectedContractorId && (
                   <div className="form-row">
                     <div className="form-group">
                       <label className="form-label">Supervisor</label>
@@ -486,6 +528,13 @@ export default function WODetailModal({ wo, onClose }) {
                   </div>
                 )}
 
+                {(role === 'contractor' || role === 'supervisor') && (
+                  <div className="form-group">
+                    <label className="form-label">Due Date</label>
+                    <input className="form-input" type="date" value={form.dueDate} onChange={event => set('dueDate', event.target.value)} />
+                  </div>
+                )}
+
                 {role === 'supervisor' && (
                   <div className="form-group">
                     <label className="form-label">Workman</label>
@@ -498,13 +547,6 @@ export default function WODetailModal({ wo, onClose }) {
                   </div>
                 )}
 
-                {(role === 'client' || role === 'contractor') && (
-                  <div className="form-group">
-                    <label className="form-label">Description</label>
-                    <textarea className="form-input" value={form.description} onChange={event => set('description', event.target.value)} />
-                  </div>
-                )}
-
                 <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                   <button className="btn" disabled={saving || !hasUnsavedChanges} onClick={() => persistEdits()}>
                     {saving ? 'Saving...' : 'Save Changes'}
@@ -514,15 +556,119 @@ export default function WODetailModal({ wo, onClose }) {
             </>
           )}
 
-          <div className="section-heading">SLA Progress</div>
+          {role === 'supervisor' && liveWO.status === 'qc' && (
+            <div className="alert alert-info" style={{ display: 'block', marginBottom: 18 }}>
+              Completion has been submitted by the workman. Review the completion photos and notes below, then pass QC or reject it for rework.
+            </div>
+          )}
+
+          {role === 'workman' && liveWO.status === 'inprogress' && (
+            <>
+              <div className="section-heading">Complete Work</div>
+              <div style={{ display: 'grid', gap: 12, marginBottom: 18 }}>
+                <div className="form-group">
+                  <label className="form-label">Completion Notes <span style={{ color: 'var(--text-3)', fontWeight: 400 }}>(optional)</span></label>
+                  <textarea
+                    className="form-input"
+                    placeholder="Describe what was done, materials used, any observations..."
+                    value={workmanNote}
+                    onChange={event => setWorkmanNote(event.target.value)}
+                    rows={3}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">
+                    Completion Photos <span style={{ color: 'var(--danger)', fontWeight: 500 }}>*</span>
+                    <span style={{ color: 'var(--text-3)', fontWeight: 400, marginLeft: 4 }}>(at least 1 required)</span>
+                  </label>
+                  <input
+                    ref={photoInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    multiple
+                    style={{ display: 'none' }}
+                    onChange={event => {
+                      const files = Array.from(event.target.files || []);
+                      setCompletionPhotos(prev => [...prev, ...files].slice(0, 5));
+                      event.target.value = '';
+                    }}
+                  />
+                  <button
+                    className="btn"
+                    type="button"
+                    onClick={() => photoInputRef.current?.click()}
+                    style={{ marginBottom: completionPhotos.length > 0 ? 10 : 0 }}
+                  >
+                    + Add Photos
+                  </button>
+                  {completionPhotos.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {completionPhotos.map((file, index) => (
+                        <div key={index} style={{ position: 'relative', width: 70, height: 70 }}>
+                          <img
+                            src={URL.createObjectURL(file)}
+                            alt={file.name}
+                            style={{ width: 70, height: 70, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)' }}
+                          />
+                          <button
+                            onClick={() => setCompletionPhotos(prev => prev.filter((_, i) => i !== index))}
+                            style={{
+                              position: 'absolute', top: -6, right: -6, width: 20, height: 20,
+                              borderRadius: '50%', background: 'var(--danger)', color: '#fff',
+                              border: 'none', cursor: 'pointer', fontSize: 12, lineHeight: '20px', textAlign: 'center', padding: 0,
+                            }}
+                          >×</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {completionPhotos.length === 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 6 }}>
+                      You must upload at least one photo showing the completed work before submitting.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+
+          <div className="section-heading">Due Date Status</div>
           <div style={{ marginBottom: 18 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5, fontSize: 12 }}>
-              <span style={{ color: 'var(--text-2)' }}>Elapsed: <strong>{liveWO.elapsedHours}h</strong> of {liveWO.slaHours}h</span>
-              <span style={{ color: slaColor, fontWeight: 600 }}>{slaPct}%{slaPct >= 100 ? ' — BREACHED' : ''}</span>
-            </div>
-            <div className="sla-bar-wrap">
-              <div className="sla-bar" style={{ width: `${slaPct}%`, background: slaColor }} />
-            </div>
+            {liveWO.dueDate ? (() => {
+              const due = new Date(liveWO.dueDate);
+              const now = new Date();
+              const diffMs = due - now;
+              const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+              const isOverdue = diffMs < 0 && liveWO.status !== 'closed';
+              return (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+                  <span style={{ color: 'var(--text-2)' }}>
+                    {due.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  </span>
+                  {liveWO.status !== 'closed' && (
+                    <span style={{
+                      fontWeight: 600,
+                      color: isOverdue ? 'var(--danger)' : diffDays <= 2 ? 'var(--warning)' : 'var(--success)',
+                      background: isOverdue ? 'var(--danger-bg)' : diffDays <= 2 ? '#fffbeb' : '#f0fdf4',
+                      padding: '2px 10px',
+                      borderRadius: 6,
+                      fontSize: 12,
+                      border: `1px solid ${isOverdue ? 'var(--danger-border)' : 'transparent'}`,
+                    }}>
+                      {isOverdue
+                        ? `Overdue by ${Math.abs(diffDays)} day${Math.abs(diffDays) !== 1 ? 's' : ''}`
+                        : diffDays === 0 ? 'Due today'
+                        : `${diffDays} day${diffDays !== 1 ? 's' : ''} remaining`}
+                    </span>
+                  )}
+                  {liveWO.status === 'closed' && (
+                    <span style={{ color: 'var(--success)', fontWeight: 600, fontSize: 12 }}>Closed</span>
+                  )}
+                </div>
+              );
+            })() : (
+              <span style={{ color: 'var(--text-3)', fontSize: 13 }}>No due date set</span>
+            )}
           </div>
 
           <div className="section-heading">Description</div>
@@ -532,16 +678,39 @@ export default function WODetailModal({ wo, onClose }) {
 
           {showDetailsInput && (
             <div className="alert alert-info" style={{ display: 'block' }}>
-              <label className="form-label">Additional Details</label>
+              <label className="form-label">
+                {role === 'client' ? 'Add Engineer Note'
+                  : role === 'supervisor' ? 'Add Supervisor Note'
+                  : role === 'contractor' ? 'Add Contractor Note'
+                  : 'Update Description / Add Details'}
+              </label>
               <textarea
                 className="form-input"
                 value={additionalDetails}
                 onChange={event => setAdditionalDetails(event.target.value)}
-                placeholder="Add extra context requested by the engineer..."
+                placeholder={
+                  role === 'client' ? 'Add a note or context — appended to description and logged in the activity trail...'
+                  : role === 'supervisor' ? 'Add site observations, instructions, or progress notes...'
+                  : role === 'contractor' ? 'Add operational notes, resource updates, or coordination details...'
+                  : 'Update the issue description or add extra details to help the engineering team...'
+                }
               />
+              {role === 'enduser' && (
+                <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>
+                  Your original description is preserved. New content will be appended.
+                  {liveWO.status === 'rejected' && ' Submitting will re-open the request for review.'}
+                </div>
+              )}
+              {(role === 'client' || role === 'supervisor' || role === 'contractor') && (
+                <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>
+                  The end user's original description is preserved. Your note will be appended and logged in the activity trail.
+                </div>
+              )}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
-                <button className="btn btn-sm" onClick={() => setShowDetailsInput(false)}>Cancel</button>
-                <button className="btn btn-primary btn-sm" disabled={saving} onClick={handleAddDetails}>Submit Details</button>
+                <button className="btn btn-sm" onClick={() => { setShowDetailsInput(false); setAdditionalDetails(''); }}>Cancel</button>
+                <button className="btn btn-primary btn-sm" disabled={saving} onClick={handleAddDetails}>
+                  Submit Note
+                </button>
               </div>
             </div>
           )}
@@ -587,6 +756,11 @@ export default function WODetailModal({ wo, onClose }) {
 
         <div className="modal-footer">
           <button className="btn" onClick={onClose}>Close</button>
+          {['client', 'supervisor', 'contractor'].includes(role) && liveWO.status !== 'closed' && (
+            <button className="btn" disabled={saving} onClick={() => setShowDetailsInput(prev => !prev)}>
+              {showDetailsInput ? 'Hide Note' : 'Add Note'}
+            </button>
+          )}
           {renderActions()}
         </div>
       </div>

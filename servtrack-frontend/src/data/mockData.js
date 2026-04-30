@@ -12,7 +12,7 @@ export const ROLES = {
 };
 
 export const STATUS_CONFIG = {
-  open:       { label: 'Open',             cls: 'badge-open' },
+  open:       { label: 'Awaiting Assignment', cls: 'badge-open' },
   assigned:   { label: 'Assigned',         cls: 'badge-assigned' },
   inprogress: { label: 'In Progress',      cls: 'badge-inprogress' },
   qc:         { label: 'Pending QC',       cls: 'badge-qc' },

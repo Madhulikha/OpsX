@@ -205,6 +205,17 @@ def get_work_order_by_id(db: Session, wo_id: int, current_user: User) -> WorkOrd
         raise HTTPException(status_code=404, detail="Work order not found")
     return wo
 
+_PRIORITY_DUE_HOURS = {"High": 15 * 24, "Med": 72, "Low": 48}
+
+def _auto_due_date(priority, due_date_override=None):
+    """Return auto-calculated due date from priority unless one is provided or priority is Major."""
+    from datetime import timedelta
+    if due_date_override:
+        return due_date_override
+    hours = _PRIORITY_DUE_HOURS.get(priority.value if hasattr(priority, "value") else priority)
+    if hours is None:
+        return None
+    return datetime.now(timezone.utc) + timedelta(hours=hours)
 
 def create_work_order(db: Session, data: WorkOrderCreate, current_user: User) -> WorkOrder:
     if current_user.role in [UserRole.CLIENT, UserRole.ENDUSER] and current_user.client_id is None:
@@ -224,7 +235,7 @@ def create_work_order(db: Session, data: WorkOrderCreate, current_user: User) ->
         preferred_visit_time=data.preferred_visit_time,
         priority=data.priority,
         sla_hours=data.sla_hours,
-        due_date=data.due_date,
+        due_date=_auto_due_date(data.priority, data.due_date),
         contractor_id=data.contractor_id,
         supervisor_id=data.supervisor_id,
         workman_id=data.workman_id,
@@ -294,28 +305,42 @@ def update_work_order(
     updates = data.model_dump(exclude_unset=True)
 
     if current_user.role == UserRole.CLIENT:
+        if wo.status != WOStatus.OPEN:
+            raise HTTPException(
+                status_code=403,
+                detail="Service request details cannot be changed once it has been assigned to a contractor",
+            )
         allowed_fields = {
-            "title", "description", "category", "sub_category", "area", "priority", "sla_hours",
-            "due_date", "contractor_id", "supervisor_id", "workman_id",
+            "title", "category", "sub_category", "area",
+            "priority", "due_date", "contractor_id",
         }
     elif current_user.role == UserRole.CONTRACTOR:
-        allowed_fields = {
-            "title", "description", "category", "area", "priority",
-            "due_date", "supervisor_id", "workman_id",
-        }
         if wo.contractor_id != current_user.contractor_id:
             raise HTTPException(status_code=403, detail="Cannot update work orders outside your contractor scope")
+        if wo.status not in [WOStatus.OPEN, WOStatus.ASSIGNED]:
+            raise HTTPException(
+                status_code=403,
+                detail="Service request details cannot be changed at this stage",
+            )
+        allowed_fields = {
+            "supervisor_id", "workman_id", "due_date",
+        }
     elif current_user.role == UserRole.SUPERVISOR:
-        allowed_fields = {"workman_id", "due_date"}
         if wo.contractor_id != current_user.contractor_id:
             raise HTTPException(status_code=403, detail="Cannot update work orders outside your contractor scope")
         if wo.supervisor_id not in [None, current_user.id]:
             raise HTTPException(status_code=403, detail="This work order belongs to another supervisor")
+        if wo.status not in [WOStatus.ASSIGNED, WOStatus.INPROGRESS]:
+            raise HTTPException(
+                status_code=403,
+                detail="Workman and due date can only be changed before completion is submitted for QC",
+            )
+        allowed_fields = {"workman_id", "due_date"}
     elif current_user.role == UserRole.ENDUSER:
         if wo.raised_by_id != current_user.id:
             raise HTTPException(status_code=403, detail="Cannot update another user's request")
-        if not (wo.status == WOStatus.REJECTED or (wo.status == WOStatus.OPEN and wo.priority.value == "Low")):
-            raise HTTPException(status_code=403, detail="Additional details are only allowed before approval for low priority requests or after rejection")
+        if wo.status not in [WOStatus.OPEN, WOStatus.REJECTED]:
+            raise HTTPException(status_code=403, detail="You can only update your request while it is open or after it has been rejected")
         allowed_fields = {"description"}
     else:
         raise HTTPException(status_code=403, detail="Not allowed to update work order details")
@@ -406,9 +431,15 @@ def transition_status(
         "pending":    "QC passed — pending client approval",
         "closed":     "Approved and closed",
         "inprogress_from_pending": "Rejected — rework required",
+        "inprogress_from_qc": "QC rejected — rework required",
         "escalated":  "Auto-escalated: SLA breached",
     }
-    action_key = new_status if new_status != "inprogress" or old_status != "pending" else "inprogress_from_pending"
+    if new_status == "inprogress" and old_status == "pending":
+        action_key = "inprogress_from_pending"
+    elif new_status == "inprogress" and old_status == "qc":
+        action_key = "inprogress_from_qc"
+    else:
+        action_key = new_status
     action = action_labels.get(action_key, f"Status changed to {new_status}")
 
     _log_activity(
@@ -441,12 +472,21 @@ def _fire_transition_notifications(
         # Notify all client users
         _notify_client_users(db, f"Approval required — {ref}", wo.title, "warning", wo.client_id, wo.id)
 
+    elif new_status == "qc":
+        if wo.supervisor_id:
+            _notify(db, wo.supervisor_id, f"Completion submitted — {ref}", wo.title, "warning", wo.id)
+
     elif new_status == "closed":
         _notify(db, wo.raised_by_id, f"WO Closed — {ref}", wo.title, "success", wo.id)
 
     elif new_status == "inprogress" and old_status == "pending":
         # Rejected
         _notify_contractor_users(db, wo, f"WO Rejected — rework required — {ref}", wo.title)
+
+    elif new_status == "inprogress" and old_status == "qc":
+        if wo.workman_id:
+            _notify(db, wo.workman_id, f"QC rejected — rework required — {ref}", wo.title, "warning", wo.id)
+        _notify_contractor_users(db, wo, f"QC rejected — rework required — {ref}", wo.title)
 
     elif new_status == "rejected":
         _notify(db, wo.raised_by_id, f"Request rejected — {ref}", wo.title, "danger", wo.id)
@@ -526,18 +566,77 @@ def request_user_escalation(db: Session, wo_id: int, current_user: User) -> Work
 
 def add_request_details(db: Session, wo_id: int, note: str, current_user: User) -> WorkOrder:
     wo = get_work_order_by_id(db, wo_id, current_user)
-    if current_user.role != UserRole.ENDUSER or wo.raised_by_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Only the requester can add details")
-    if not (wo.status == WOStatus.REJECTED or (wo.status == WOStatus.OPEN and wo.priority.value == "Low")):
-        raise HTTPException(status_code=422, detail="Details can be added before junior approval for low priority requests or after rejection")
-    wo.description = f"{wo.description or ''}\n\nAdditional details: {note}".strip()
-    if wo.status == WOStatus.REJECTED:
+    if current_user.role == UserRole.ENDUSER:
+        if wo.raised_by_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Only the requester can add details")
+        if wo.status not in [WOStatus.OPEN, WOStatus.REJECTED]:
+            raise HTTPException(status_code=422, detail="Details can only be added while the request is open or after rejection")
+        wo.description = f"{wo.description or ''}\n\nAdditional details (requester): {note}".strip()
         old_status = wo.status.value
-        wo.status = WOStatus.OPEN
-        _notify_client_subrole(db, f"Updated request ready for review — {wo.ref_number}", wo.title, "warning", wo.client_id, "junior_engineer", wo.id)
+        if wo.status == WOStatus.REJECTED:
+            wo.status = WOStatus.OPEN
+            _notify_client_subrole(
+                db, f"Updated request ready for review — {wo.ref_number}",
+                wo.title, "warning", wo.client_id, "junior_engineer", wo.id,
+            )
+        action = "Additional details added by requester"
+
+    elif current_user.role == UserRole.CLIENT:
+        if current_user.client_id != wo.client_id:
+            raise HTTPException(status_code=403, detail="Cannot add notes to work orders outside your client scope")
+        if wo.status == WOStatus.CLOSED:
+            raise HTTPException(status_code=422, detail="Cannot add notes to a closed request")
+        old_status = wo.status.value
+        wo.description = f"{wo.description or ''}\n\nEngineer note ({current_user.full_name}): {note}".strip()
+        action = "Engineer note added"
+
+    elif current_user.role in [UserRole.SUPERVISOR, UserRole.CONTRACTOR]:
+        if wo.status == WOStatus.CLOSED:
+            raise HTTPException(status_code=422, detail="Cannot add notes to a closed request")
+        if current_user.role == UserRole.SUPERVISOR and wo.supervisor_id != current_user.id:
+            # Allow contractor supervisors to note on their contractor's work orders
+            if wo.contractor_id != current_user.contractor_id:
+                raise HTTPException(status_code=403, detail="Access denied")
+        if current_user.role == UserRole.CONTRACTOR and wo.contractor_id != current_user.contractor_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        old_status = wo.status.value
+        role_label = "Supervisor" if current_user.role == UserRole.SUPERVISOR else "Contractor"
+        wo.description = f"{wo.description or ''}\n\n{role_label} note ({current_user.full_name}): {note}".strip()
+        action = f"{role_label} note added"
+
     else:
-        old_status = wo.status.value
-    _log_activity(db, wo.id, current_user.id, "Additional details added", note=note, from_status=old_status, to_status=wo.status.value)
+        raise HTTPException(status_code=403, detail="Only the requester or an engineer can add details")
+
+    _log_activity(db, wo.id, current_user.id, action, note=note, from_status=old_status, to_status=wo.status.value)
+    db.commit()
+    db.refresh(wo)
+    return wo
+
+
+def complete_work_with_photos(
+    db: Session,
+    wo_id: int,
+    current_user: User,
+    note: Optional[str] = None,
+) -> WorkOrder:
+    wo = get_work_order_by_id(db, wo_id, current_user)
+    if current_user.role != UserRole.WORKMAN:
+        raise HTTPException(status_code=403, detail="Only assigned workmen can complete work")
+    if wo.workman_id != current_user.id:
+        raise HTTPException(status_code=403, detail="This task is assigned to another workman")
+    if wo.status != WOStatus.INPROGRESS:
+        raise HTTPException(status_code=422, detail="Only in-progress work can be completed")
+
+    old_status = wo.status.value
+    wo.status = WOStatus.QC
+    _log_activity(
+        db, wo.id, current_user.id,
+        action="Work completed — pending supervisor approval",
+        note=note or "Completion photos uploaded",
+        from_status=old_status,
+        to_status=WOStatus.QC,
+    )
+    _fire_transition_notifications(db, wo, old_status, "qc", current_user)
     db.commit()
     db.refresh(wo)
     return wo

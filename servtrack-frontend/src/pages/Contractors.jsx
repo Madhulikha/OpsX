@@ -2,12 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import './Contractors.css';
 
-function activationLabel(contractor) {
+export function activationLabel(contractor) {
   if (contractor.link_status === 'invited') return 'Invite sent';
   return contractor.has_login ? 'Active login' : 'Pending activation';
 }
 
-async function copyInviteLink(inviteUrl, showToast) {
+export async function copyInviteLink(inviteUrl, showToast) {
   if (!inviteUrl) return false;
   try {
     await navigator.clipboard.writeText(inviteUrl);
@@ -19,7 +19,7 @@ async function copyInviteLink(inviteUrl, showToast) {
   }
 }
 
-function AddContractorModal({ onClose }) {
+export function AddContractorModal({ onClose }) {
   const { createContractor, discoverContractors, linkContractor, showToast } = useApp();
   const [mode, setMode] = useState('existing');
   const [search, setSearch] = useState('');
@@ -329,7 +329,6 @@ function ContractorDetailModal({ contractor, activeCount, onClose }) {
 
 export default function Contractors() {
   const { contractors, workOrders, role } = useApp();
-  const [showAddModal, setShowAddModal] = useState(false);
   const [selectedContractor, setSelectedContractor] = useState(null);
 
   const activeCountByContractor = useMemo(() => workOrders.reduce((acc, wo) => {
@@ -345,9 +344,6 @@ export default function Contractors() {
           <div className="page-title">Contractors</div>
           <div className="page-sub">Linked service partners available for assignment and maintenance delivery</div>
         </div>
-        {role === 'client' && (
-          <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>+ Add Contractor</button>
-        )}
       </div>
 
       {contractors.length === 0 ? (
@@ -399,7 +395,6 @@ export default function Contractors() {
         </div>
       )}
 
-      {showAddModal && <AddContractorModal onClose={() => setShowAddModal(false)} />}
       {selectedContractor && (
         <ContractorDetailModal
           contractor={selectedContractor}

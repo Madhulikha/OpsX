@@ -6,7 +6,7 @@ import CreateWOModal from '../components/workorders/CreateWOModal';
 
 const FILTERS = [
   { id: 'all',        label: 'All'             },
-  { id: 'open',       label: 'Open'            },
+  { id: 'open',       label: 'Awaiting Assignment' },
   { id: 'assigned',   label: 'Assigned'        },
   { id: 'inprogress', label: 'In Progress'     },
   { id: 'qc',         label: 'Pending QC'      },
@@ -48,11 +48,11 @@ export default function WorkOrders() {
     return counts;
   }, [roleWOs]);
 
-  const pageTitle = role === 'enduser' ? 'My Requests' : 'Work Orders';
+  const pageTitle = role === 'enduser' ? 'My Requests' : 'Service Requests';
   const pageSub = role === 'enduser'
     ? `${roleWOs.length} request${roleWOs.length === 1 ? '' : 's'} you have raised`
     : `${roleWOs.length} total in your scope`;
-  const emptyTitle = role === 'enduser' ? 'No requests yet' : 'No work orders found';
+  const emptyTitle = role === 'enduser' ? 'No requests yet' : 'No service requests found';
   const emptySub = role === 'enduser'
     ? 'Raise your first maintenance request to start tracking it here.'
     : 'Try adjusting the filters or search term';
@@ -66,7 +66,7 @@ export default function WorkOrders() {
         </div>
         {canCreate && (
           <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
-            + New Work Order
+            + New Service Request
           </button>
         )}
       </div>
@@ -105,12 +105,12 @@ export default function WorkOrders() {
           <table className="data-table">
             <thead>
               <tr>
-                <th style={{ width: 240 }}>Work Order</th>
+                <th style={{ width: 240 }}>Service Request</th>
                 <th>Area</th>
                 <th>Contractor</th>
                 <th>Priority</th>
                 <th>Status</th>
-                <th>SLA</th>
+                <th>Due In</th>
                 <th>{role === 'enduser' ? 'Preferred Time' : 'Due'}</th>
                 <th></th>
               </tr>
@@ -130,12 +130,22 @@ export default function WorkOrders() {
                     <td className={`priority-${wo.priority.toLowerCase()}`}>{wo.priority}</td>
                     <td><StatusBadge status={wo.status} /></td>
                     <td>
-                      <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                        <div className="sla-bar-wrap" style={{ width:60 }}>
-                          <div className="sla-bar" style={{ width:`${slaPct}%`, background:slaColor }} />
-                        </div>
-                        <span style={{ fontSize:11, color:slaColor, fontWeight:600 }}>{slaPct}%</span>
-                      </div>
+                    {wo.dueDate && wo.status !== 'closed' ? (() => {
+                        const diffDays = Math.ceil((new Date(wo.dueDate) - new Date()) / 86400000);
+                        const isOverdue = diffDays < 0;
+                        return (
+                          <span style={{
+                            fontSize: 11, fontWeight: 600,
+                            color: isOverdue ? 'var(--danger)' : diffDays <= 2 ? 'var(--warning)' : 'var(--text-2)',
+                          }}>
+                            {isOverdue ? `${Math.abs(diffDays)}d overdue` : diffDays === 0 ? 'Today' : `${diffDays}d left`}
+                          </span>
+                        );
+                      })() : (
+                        <span style={{ color: 'var(--text-3)', fontSize: 11 }}>
+                          {wo.status === 'closed' ? '—' : 'No due date'}
+                        </span>
+                      )}
                     </td>
                     <td style={{
                       color: wo.status === 'escalated' ? 'var(--danger)' : wo.slaBreached ? 'var(--warning)' : 'var(--text-2)',

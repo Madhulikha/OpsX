@@ -3,10 +3,20 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { CATEGORIES, REQUEST_AREAS, REQUEST_CATEGORY_OPTIONS } from '../data/mockData';
 
+const PREFERRED_TIME_SLOTS = [
+  'Morning  8:00 AM – 10:00 AM',
+  'Morning 10:00 AM – 12:00 PM',
+  'Afternoon 12:00 PM – 2:00 PM',
+  'Afternoon  2:00 PM – 4:00 PM',
+  'Evening   4:00 PM – 6:00 PM',
+  'Anytime during the day',
+];
+
 export default function RaiseRequest() {
   const navigate = useNavigate();
   const { createWorkOrder, showToast, dataLoading } = useApp();
   const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const [form, setForm] = useState({
     title: '',
     category: 'Electrical',
@@ -24,6 +34,23 @@ export default function RaiseRequest() {
       [field]: value,
       ...(field === 'category' ? { subCategory: REQUEST_CATEGORY_OPTIONS[value]?.[0] || '' } : {}),
     }));
+  }
+
+  function fieldError(field) {
+    if (!submitted) return null;
+    const v = form[field];
+    if (field === 'photos') return form.photos.length === 0 ? 'Please upload at least one photo of the issue' : null;
+    if (!v || (typeof v === 'string' && !v.trim())) {
+      const labels = {
+        title: 'Please add a short request title',
+        area: 'Please select the area / location',
+        subCategory: 'Please choose a sub category',
+        preferredVisitTime: 'Please select a preferred visit time',
+        description: 'Please describe the issue',
+      };
+      return labels[field] || 'This field is required';
+    }
+    return null;
   }
 
   function handlePhotoChange(event) {
@@ -56,30 +83,14 @@ export default function RaiseRequest() {
 
   async function handleSubmit(event) {
     event.preventDefault();
-    if (!form.title.trim()) {
-      showToast('Please add a short request title', 'danger');
-      return;
-    }
-    if (!form.area.trim()) {
-      showToast('Please add the location or area', 'danger');
-      return;
-    }
-    if (!form.subCategory.trim()) {
-      showToast('Please choose a sub category', 'danger');
-      return;
-    }
-    if (!form.preferredVisitTime.trim()) {
-      showToast('Please add a preferred time for the workman to come', 'danger');
-      return;
-    }
-    if (!form.description.trim()) {
-      showToast('Please describe the issue so the team can act quickly', 'danger');
-      return;
-    }
-    if (form.photos.length === 0) {
-      showToast('Please upload at least one photo of the issue', 'danger');
-      return;
-    }
+    setSubmitted(true);
+
+    if (!form.title.trim()) return;
+    if (!form.area.trim()) return;
+    if (!form.subCategory.trim()) return;
+    if (!form.preferredVisitTime.trim()) return;
+    if (!form.description.trim()) return;
+    if (form.photos.length === 0) return;
 
     setSubmitting(true);
     try {
@@ -98,24 +109,24 @@ export default function RaiseRequest() {
       <div className="page-header">
         <div>
           <div className="page-title">Raise a Request</div>
-          <div className="page-sub">Submit a real maintenance request to the backend and track it live.</div>
+          <div className="page-sub">Submit a maintenance request and track it live.</div>
         </div>
       </div>
 
 
       <div className="card">
         <div className="card-body">
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={handleSubmit} noValidate>
             <div className="form-group">
               <label className="form-label">Request Title *</label>
               <input
-                className="form-input"
+                className={`form-input${fieldError('title') ? ' input-error' : ''}`}
                 placeholder="Short summary of the issue"
                 value={form.title}
                 onChange={event => set('title', event.target.value)}
                 disabled={submitting || dataLoading}
-                required
-              />
+                />
+              {fieldError('title') && <div className="field-error">{fieldError('title')}</div>}
             </div>
 
             <div className="form-row">
@@ -126,7 +137,6 @@ export default function RaiseRequest() {
                   value={form.category}
                   onChange={event => set('category', event.target.value)}
                   disabled={submitting || dataLoading}
-                  required
                 >
                   {CATEGORIES.map(category => <option key={category}>{category}</option>)}
                 </select>
@@ -135,7 +145,7 @@ export default function RaiseRequest() {
               <div className="form-group">
                 <label className="form-label">Sub Category *</label>
                 <select
-                  className="form-input"
+                  className={`form-input${fieldError('subCategory') ? ' input-error' : ''}`}
                   value={form.subCategory}
                   onChange={event => set('subCategory', event.target.value)}
                   disabled={submitting || dataLoading}
@@ -145,6 +155,7 @@ export default function RaiseRequest() {
                     <option key={subCategory} value={subCategory}>{subCategory}</option>
                   ))}
                 </select>
+                {fieldError('subCategory') && <div className="field-error">{fieldError('subCategory')}</div>}
               </div>
             </div>
 
@@ -152,7 +163,7 @@ export default function RaiseRequest() {
               <div className="form-group">
                 <label className="form-label">Area / Location *</label>
                 <select
-                  className="form-input"
+                  className={`form-input${fieldError('area') ? ' input-error' : ''}`}
                   value={form.area}
                   onChange={event => set('area', event.target.value)}
                   disabled={submitting || dataLoading}
@@ -161,48 +172,36 @@ export default function RaiseRequest() {
                   <option value="">Select area</option>
                   {REQUEST_AREAS.map(area => <option key={area} value={area}>{area}</option>)}
                 </select>
+                {fieldError('area') && <div className="field-error">{fieldError('area')}</div>}
               </div>
 
               <div className="form-group">
-                <label className="form-label">Preferred Time *</label>
-                <input
-                  className="form-input"
-                  placeholder="For example: 10 AM - 12 PM, after lunch, anytime today"
+              <label className="form-label">Preferred Visit Time *</label>
+                <select
+                  className={`form-input${fieldError('preferredVisitTime') ? ' input-error' : ''}`}
                   value={form.preferredVisitTime}
                   onChange={event => set('preferredVisitTime', event.target.value)}
                   disabled={submitting || dataLoading}
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="form-row">
-              <div className="form-group">
-                <label className="form-label">Priority *</label>
-                <select
-                  className="form-input"
-                  value={form.priority}
-                  onChange={event => set('priority', event.target.value)}
-                  disabled={submitting || dataLoading}
-                  required
-                >
-                  <option value="High">High</option>
-                  <option value="Med">Medium</option>
-                  <option value="Low">Low</option>
+                  >
+                  <option value="">Select a time slot</option>
+                  {PREFERRED_TIME_SLOTS.map(slot => (
+                    <option key={slot} value={slot}>{slot}</option>
+                  ))}
                 </select>
+                {fieldError('preferredVisitTime') && <div className="field-error">{fieldError('preferredVisitTime')}</div>}
               </div>
             </div>
 
             <div className="form-group">
               <label className="form-label">Description *</label>
               <textarea
-                className="form-input"
+                className={`form-input${fieldError('description') ? ' input-error' : ''}`}
                 placeholder="Explain the issue, what you observed, when it started, and anything that may help the maintenance team."
                 value={form.description}
                 onChange={event => set('description', event.target.value)}
                 disabled={submitting || dataLoading}
-                required
-              />
+                />
+              {fieldError('description') && <div className="field-error">{fieldError('description')}</div>}
             </div>
 
             <div className="form-group">
@@ -214,9 +213,9 @@ export default function RaiseRequest() {
                 multiple
                 onChange={handlePhotoChange}
                 disabled={submitting || dataLoading}
-                required={form.photos.length === 0}
               />
               <div className="text-xs text-2" style={{ marginTop: 6 }}>Upload up to 5 JPG, PNG, or WebP photos. Max 5 MB each.</div>
+              {fieldError('photos') && <div className="field-error">{fieldError('photos')}</div>}
               {form.photos.length > 0 && (
                 <div className="request-photo-grid">
                   {form.photos.map((photo, index) => (

@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { AddContractorModal } from './Contractors';
 import './Contracts.css';
 
 const STATUS_FILTERS = [
@@ -57,22 +58,40 @@ function AddContractModal({ onClose }) {
   const [form, setForm] = useState({
     contractorId: contractors[0]?.id || '',
     title: '',
+    value: '',
     scope: '',
     startDate: today,
     endDate: nextYear,
-    value: '',
     defaultSlaHours: 24,
     status: 'active',
   });
   const [submitting, setSubmitting] = useState(false);
 
+  const [showAddContractor, setShowAddContractor] = useState(false);
+  const prevCountRef = useRef(contractors.length);
+
   function set(field, value) {
     setForm(prev => ({ ...prev, [field]: value }));
   }
 
+  useEffect(() => {
+    if (contractors.length > prevCountRef.current) {
+      set('contractorId', contractors[0]?.id || '');
+    }
+    prevCountRef.current = contractors.length;
+  }, [contractors]);
+
   async function handleSubmit() {
-    if (!form.contractorId || !form.title.trim() || !form.startDate || !form.endDate) {
-      showToast('Contractor, title, start date, and end date are required', 'danger');
+    if (!form.contractorId) {
+      showToast('Please select or add a contractor', 'danger');
+      return;
+    }
+    if (!form.title.trim()) {
+      showToast('Contract title is required', 'danger');
+      return;
+    }
+    if (!form.startDate || !form.endDate) {
+      showToast('Start and end dates are required', 'danger');
       return;
     }
     if (new Date(form.endDate) < new Date(form.startDate)) {
@@ -93,69 +112,126 @@ function AddContractModal({ onClose }) {
   }
 
   return (
-    <div className="modal-overlay" onClick={event => event.target === event.currentTarget && onClose()}>
-      <div className="modal contracts-modal">
-        <div className="modal-header">
-          <div>
-            <span className="modal-title">Add Contract</span>
-            <div className="page-sub contracts-modal-sub">Set the agreement terms used for SLA tracking.</div>
-          </div>
-          <button className="modal-close" onClick={onClose}>x</button>
-        </div>
-        <div className="modal-body">
-          <div className="form-group">
-            <label className="form-label">Contractor</label>
-            <select className="form-input" value={form.contractorId} onChange={event => set('contractorId', event.target.value)}>
-              {contractors.map(contractor => (
-                <option key={contractor.id} value={contractor.id}>{contractor.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group">
-            <label className="form-label">Title</label>
-            <input className="form-input" value={form.title} onChange={event => set('title', event.target.value)} />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Scope</label>
-            <textarea className="form-input" value={form.scope} onChange={event => set('scope', event.target.value)} />
-          </div>
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label">Start Date</label>
-              <input className="form-input" type="date" value={form.startDate} onChange={event => set('startDate', event.target.value)} />
+    <>
+      <div className="modal-overlay" onClick={event => event.target === event.currentTarget && onClose()}>
+        <div className="modal contracts-modal">
+          <div className="modal-header">
+            <div>
+              <span className="modal-title">Add Contract</span>
+              <div className="page-sub contracts-modal-sub">Set the agreement terms for this service partner.</div>
             </div>
-            <div className="form-group">
-              <label className="form-label">End Date</label>
-              <input className="form-input" type="date" value={form.endDate} onChange={event => set('endDate', event.target.value)} />
-            </div>
+            <button className="modal-close" onClick={onClose}>×</button>
           </div>
-          <div className="form-row">
+          <div className="modal-body">
+
             <div className="form-group">
-              <label className="form-label">Value</label>
-              <input className="form-input" type="number" min="0" value={form.value} onChange={event => set('value', event.target.value)} />
+              <label className="form-label">Contract Title *</label>
+              <input
+                className="form-input"
+                placeholder="e.g. Annual Electrical Maintenance 2026"
+                value={form.title}
+                onChange={event => set('title', event.target.value)}
+              />
             </div>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Value (₹)</label>
+                <input
+                  className="form-input"
+                  type="number"
+                  min="0"
+                  placeholder="Contract value in INR"
+                  value={form.value}
+                  onChange={event => set('value', event.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Default SLA Hours</label>
+                <input
+                  className="form-input"
+                  type="number"
+                  min="1"
+                  value={form.defaultSlaHours}
+                  onChange={event => set('defaultSlaHours', event.target.value)}
+                />
+              </div>
+            </div>
+
             <div className="form-group">
-              <label className="form-label">Default SLA Hours</label>
-              <input className="form-input" type="number" min="1" value={form.defaultSlaHours} onChange={event => set('defaultSlaHours', event.target.value)} />
+              <label className="form-label">Scope</label>
+              <textarea
+                className="form-input"
+                placeholder="Describe the scope of work covered under this contract..."
+                value={form.scope}
+                onChange={event => set('scope', event.target.value)}
+              />
             </div>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Start Date *</label>
+                <input className="form-input" type="date" value={form.startDate} onChange={event => set('startDate', event.target.value)} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">End Date *</label>
+                <input className="form-input" type="date" value={form.endDate} onChange={event => set('endDate', event.target.value)} />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Contractor *</label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <select
+                  className="form-input"
+                  style={{ flex: 1 }}
+                  value={form.contractorId}
+                  onChange={event => set('contractorId', event.target.value)}
+                >
+                  <option value="">Select a contractor</option>
+                  {contractors.map(contractor => (
+                    <option key={contractor.id} value={contractor.id}>{contractor.name}</option>
+                  ))}
+                </select>
+                <button
+                  className="btn btn-sm"
+                  style={{ whiteSpace: 'nowrap' }}
+                  onClick={() => setShowAddContractor(true)}
+                  type="button"
+                >
+                  + Add Contractor
+                </button>
+              </div>
+              {contractors.length === 0 && (
+                <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 6 }}>
+                  No contractors linked yet. Use "+ Add Contractor" to add and link your first one.
+                </div>
+              )}
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Status</label>
+              <select className="form-input" value={form.status} onChange={event => set('status', event.target.value)}>
+                <option value="active">Active</option>
+                <option value="pending">Pending</option>
+                <option value="paused">Paused</option>
+              </select>
+            </div>
+
           </div>
-          <div className="form-group">
-            <label className="form-label">Status</label>
-            <select className="form-input" value={form.status} onChange={event => set('status', event.target.value)}>
-              <option value="active">Active</option>
-              <option value="pending">Pending</option>
-              <option value="paused">Paused</option>
-            </select>
+          <div className="modal-footer">
+            <button className="btn" onClick={onClose}>Cancel</button>
+            <button className="btn btn-primary" onClick={handleSubmit} disabled={submitting}>
+              {submitting ? 'Saving...' : 'Add Contract'}
+            </button>
           </div>
-        </div>
-        <div className="modal-footer">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={submitting}>
-            {submitting ? 'Saving...' : 'Add Contract'}
-          </button>
         </div>
       </div>
-    </div>
+
+      {showAddContractor && (
+        <AddContractorModal onClose={() => setShowAddContractor(false)} />
+      )}
+    </>
   );
 }
 

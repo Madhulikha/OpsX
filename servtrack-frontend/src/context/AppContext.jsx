@@ -80,7 +80,9 @@ function mapWorkOrder(wo, previous = null) {
     dueDate,
     slaHours: wo.sla_hours,
     elapsedHours: wo.elapsed_hours,
-    slaBreached: wo.sla_breached,
+    slaBreached: wo.due_date
+    ? (new Date(wo.due_date) < new Date() && wo.status !== 'closed')
+    : wo.sla_breached,
     createdAt: wo.created_at,
     updatedAt: wo.updated_at,
     startedAt: wo.started_at,
@@ -459,6 +461,32 @@ export function AppProvider({ children }) {
     return payload;
   }, [apiFetch, loadDashboardStats, loadNotifications, mergeWorkOrder]);
 
+  const uploadWorkOrderPhotos = useCallback(async (id, files) => {
+    const body = new FormData();
+    files.forEach(file => body.append('photos', file));
+    const payload = await apiFetch(`/work-orders/${id}/photos`, { method: 'POST', body });
+    mergeWorkOrder(payload);
+    await loadWorkOrderDetail(id);
+    return payload;
+  }, [apiFetch, loadWorkOrderDetail, mergeWorkOrder]);
+
+  const completeWorkOrder = useCallback(async (id, files, note = '') => {
+    const body = new FormData();
+    if (note.trim()) body.append('note', note.trim());
+    files.forEach(file => body.append('photos', file));
+    const payload = await apiFetch(`/work-orders/${id}/complete`, { method: 'POST', body });
+    mergeWorkOrder(payload);
+    await Promise.all([loadNotifications(), loadDashboardStats()]);
+    return payload;
+  }, [apiFetch, loadDashboardStats, loadNotifications, mergeWorkOrder]);
+
+  const inviteContractorUser = useCallback(async ({ email, role: inviteRole }) => {
+    return apiFetch('/users/invite-contractor-user', {
+      method: 'POST',
+      body: JSON.stringify({ email, role: inviteRole }),
+    });
+  }, [apiFetch]);
+
   const createContractor = useCallback(async (form) => {
     const payload = await apiFetch('/contractors/', {
       method: 'POST',
@@ -532,6 +560,8 @@ export function AppProvider({ children }) {
       createWorkOrder,
       escalateRequest,
       addRequestDetails,
+      uploadWorkOrderPhotos,
+      completeWorkOrder,
       dashboardStats,
       contractors,
       notifications,
@@ -544,6 +574,7 @@ export function AppProvider({ children }) {
       contracts,
       loadContracts,
       createContract,
+      inviteContractorUser,
       acceptInvite,
       toasts,
       showToast,

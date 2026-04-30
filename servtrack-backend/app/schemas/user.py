@@ -13,6 +13,20 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class OtpRequest(BaseModel):
+    identifier: str  # email or phone number
+
+
+class OtpVerify(BaseModel):
+    identifier: str
+    otp_code: str
+
+
+class OtpRequestResponse(BaseModel):
+    message: str
+    demo_otp: Optional[str] = None  # shown because email is not configured
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -57,6 +71,18 @@ class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     phone: Optional[str] = None
     is_active: Optional[bool] = None
+
+
+class ContractorUserInviteRequest(BaseModel):
+    email: EmailStr
+    role: UserRole
+
+    @field_validator("role")
+    @classmethod
+    def contractor_team_role(cls, value: UserRole) -> UserRole:
+        if value not in [UserRole.SUPERVISOR, UserRole.WORKMAN]:
+            raise ValueError("Role must be supervisor or workman")
+        return value
 
 
 class UserOut(BaseModel):

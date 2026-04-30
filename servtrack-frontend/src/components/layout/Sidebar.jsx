@@ -17,9 +17,9 @@ const NAV_CONFIG = {
     {
       section: 'Maintenance',
       items: [
-        { to: '/work-orders',    label: 'Work Orders',   icon: '🔧', badge: null },
-        { to: '/sla',            label: 'SLA Tracker',   icon: '🕐', badge: null },
-        { to: '/approvals',      label: 'Approvals',     icon: '✓',  badge: 2 },
+        { to: '/work-orders',    label: 'Service Requests',   icon: '🔧', badge: null },
+        { to: '/approvals',      label: 'Approvals',          icon: '✓',  badge: null },
+        { to: '/sla',            label: 'SLA Tracker',        icon: '🕐', badge: null },
       ],
     },
     {
@@ -27,6 +27,7 @@ const NAV_CONFIG = {
       items: [
         { to: '/contractors',    label: 'Contractors',   icon: '👥', badge: null },
         { to: '/contracts',      label: 'Contracts',     icon: '📄', badge: null },
+        { to: '/end-users',      label: 'End Users',     icon: '🏠', badge: null },
         { to: '/assets',         label: 'Assets',        icon: '⚙',  badge: null, soon: true },
       ],
     },
@@ -42,19 +43,20 @@ const NAV_CONFIG = {
       section: 'Overview',
       items: [
         { to: '/dashboard',      label: 'Dashboard',     icon: '⊞',  badge: null },
+        { to: '/notifications',  label: 'Notifications',      icon: '🔔', badgeKey: 'unread' },
       ],
     },
     {
       section: 'My Work',
       items: [
-        { to: '/work-orders',    label: 'Work Orders',   icon: '🔧', badge: null },
+        { to: '/work-orders',    label: 'Service Requests',   icon: '🔧', badge: null },
         { to: '/approvals',      label: 'Approvals',     icon: '✓',  badge: 1 },
       ],
     },
     {
       section: 'Management',
       items: [
-        { to: '/contractors',    label: 'My Supervisors', icon: '👥', badge: null },
+        { to: '/workforce',      label: 'My Team',        icon: '👥', badge: null },
         { to: '/contracts',      label: 'Contracts',      icon: '📄', badge: null },
       ],
     },
@@ -69,12 +71,18 @@ const NAV_CONFIG = {
     {
       section: 'My Work',
       items: [
-        { to: '/work-orders',    label: 'Work Orders', icon: '🔧', badge: null },
+        { to: '/work-orders',    label: 'Service Requests', icon: '🔧', badge: null },
         { to: '/workforce',      label: 'Workforce',   icon: '👥', badge: null },
       ],
     },
   ],
   workman: [
+    {
+      section: 'Overview',
+      items: [
+        { to: '/dashboard',      label: 'Dashboard',   icon: '⊞',  badge: null },
+      ],
+    },
     {
       section: 'My Tasks',
       items: [
@@ -103,7 +111,18 @@ const NAV_CONFIG = {
 export default function Sidebar() {
   const { role, currentUser, unreadCount, workOrders } = useApp();
   const navItems = NAV_CONFIG[role] || NAV_CONFIG.client;
-  const approvalsCount = workOrders.filter(wo => wo.status === 'pending' || wo.status === 'escalated').length;
+  function approvalStageFor(wo) {
+    if (wo.status === 'escalated') return 'commandant_engineer';
+    if (!['open', 'rejected', 'pending'].includes(wo.status)) return 'none';
+    const ageHours = (Date.now() - new Date(wo.createdAt).getTime()) / 3600000;
+    if (ageHours >= 48) return 'commandant_engineer';
+    if (ageHours >= 24) return 'assistant_engineer';
+    return 'junior_engineer';
+  }
+  const mySubrole = currentUser?.client_subrole || 'junior_engineer';
+  const approvalsCount = role === 'client'
+    ? workOrders.filter(wo => wo.status === 'pending' || approvalStageFor(wo) === mySubrole).length
+    : 0;
   const activeTaskCount = workOrders.filter(wo => wo.status !== 'closed').length;
   const roleInfo = ROLES[role] || ROLES.client;
   const clientSubroleLabels = {

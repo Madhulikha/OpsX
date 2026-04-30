@@ -27,6 +27,7 @@ class WOPriority(str, enum.Enum):
     HIGH   = "High"
     MEDIUM = "Med"
     LOW    = "Low"
+    MAJOR  = "Major"
 
 
 class WOCategory(str, enum.Enum):
@@ -48,7 +49,7 @@ STATUS_TRANSITIONS: dict[tuple[str, str], list[str]] = {
     ("assigned",   "supervisor"): ["inprogress"],
     ("inprogress", "workman"):    ["qc"],
     ("inprogress", "supervisor"): ["qc"],
-    ("qc",         "supervisor"): ["pending"],
+    ("qc",         "supervisor"): ["pending", "inprogress"],
     ("pending",    "client"):     ["closed", "inprogress"],   # approve or reject
     ("escalated",  "client"):     ["inprogress", "closed"],
 }

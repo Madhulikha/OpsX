@@ -54,7 +54,7 @@ export default function Dashboard() {
 
   const statsByRole = {
     client: [
-      { label: 'Open', value: dashboardStats?.total_open ?? 0, sub: 'live from backend', subCls: '' },
+      { label: 'Awaiting Assignment', value: dashboardStats?.total_open ?? 0, sub: 'needs engineer action', subCls: '' },
       { label: 'In Progress', value: dashboardStats?.total_inprogress ?? 0, sub: 'currently active', subCls: '' },
       { label: 'Closed', value: dashboardStats?.total_closed_this_month ?? 0, sub: 'this month', subCls: 'up' },
       { label: 'SLA Breaches', value: dashboardStats?.sla_breaches ?? 0, sub: 'needs action', subCls: 'danger' },
@@ -72,7 +72,7 @@ export default function Dashboard() {
       { label: 'Pending Approval', value: workOrders.filter(wo => wo.status === 'pending').length, sub: 'sent to client', subCls: '' },
     ],
     workman: [
-      { label: 'My Open Tasks', value: workOrders.filter(wo => wo.status !== 'closed').length, sub: 'current assignments', subCls: '' },
+      { label: 'My Active Tasks', value: workOrders.filter(wo => wo.status !== 'closed').length, sub: 'current assignments', subCls: '' },
       { label: 'In Progress', value: workOrders.filter(wo => wo.status === 'inprogress').length, sub: 'being worked now', subCls: '' },
     ],
     enduser: endUserStats,
@@ -369,6 +369,173 @@ export default function Dashboard() {
                 <div className="sla-kpi-value" style={{ fontSize: 18 }}>{topContractor?.name || '—'}</div>
                 <div className="sla-kpi-sub">{topContractor ? `${topContractor.rating.toFixed(1)} ★ rating` : 'No contractor data'}</div>
               </div>
+            </div>
+          </div>
+        </div>
+
+        {selectedWO && (
+          <WODetailModal
+            wo={workOrders.find(w => w.id === selectedWO.id)}
+            onClose={() => setSelectedWO(null)}
+          />
+        )}
+      </div>
+    );
+  }
+
+  if (role === 'supervisor') {
+    const qcItems = workOrders.filter(wo => wo.status === 'qc').slice(0, 5);
+    const activeSiteWork = workOrders.filter(wo => ['assigned', 'inprogress'].includes(wo.status)).slice(0, 5);
+
+    return (
+      <div>
+        <div className="stats-grid" style={{ gridTemplateColumns: `repeat(${stats.length}, 1fr)` }}>
+          {stats.map(stat => (
+            <div className="stat-card" key={stat.label}>
+              <div className="stat-label">{stat.label}</div>
+              <div className="stat-value">{stat.value}</div>
+              <div className={`stat-sub ${stat.subCls}`}>{stat.sub}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="enduser-dashboard-grid">
+          <div className="card">
+            <div className="card-header">
+              <span className="card-title">QC Review Queue</span>
+              <button className="btn btn-sm" onClick={() => navigate('/work-orders')}>Open queue</button>
+            </div>
+            <div className="card-body">
+              {qcItems.length === 0 ? (
+                <div className="empty-state" style={{ padding: '32px 12px' }}>
+                  <div className="empty-title">No completion reviews</div>
+                  <div className="empty-sub">Workman submissions will appear here for photo and note review.</div>
+                </div>
+              ) : (
+                <div className="enduser-request-list">
+                  {qcItems.map(item => (
+                    <button key={item.id} className="enduser-request-card" onClick={() => setSelectedWO(item)}>
+                      <div className="enduser-request-top">
+                        <span className="enduser-request-ref">{item.refNumber}</span>
+                        <StatusBadge status={item.status} />
+                      </div>
+                      <div className="enduser-request-title">{item.title}</div>
+                      <div className="enduser-request-meta">{item.workman} · {item.area}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="card-header">
+              <span className="card-title">Active Site Work</span>
+              <button className="btn btn-sm" onClick={() => navigate('/work-orders')}>View all</button>
+            </div>
+            <div className="card-body">
+              {activeSiteWork.length === 0 ? (
+                <div className="empty-state" style={{ padding: '32px 12px' }}>
+                  <div className="empty-title">No active assignments</div>
+                  <div className="empty-sub">Assigned and in-progress work will appear here.</div>
+                </div>
+              ) : (
+                <div className="enduser-request-list">
+                  {activeSiteWork.map(item => (
+                    <button key={item.id} className="enduser-request-card" onClick={() => setSelectedWO(item)}>
+                      <div className="enduser-request-top">
+                        <span className="enduser-request-ref">{item.refNumber}</span>
+                        <StatusBadge status={item.status} />
+                      </div>
+                      <div className="enduser-request-title">{item.title}</div>
+                      <div className="enduser-request-meta">{item.workman} · Due {item.due}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {selectedWO && (
+          <WODetailModal
+            wo={workOrders.find(w => w.id === selectedWO.id)}
+            onClose={() => setSelectedWO(null)}
+          />
+        )}
+      </div>
+    );
+  }
+
+  if (role === 'workman') {
+    const inProgressTasks = workOrders.filter(wo => wo.status === 'inprogress').slice(0, 5);
+    const queuedTasks = workOrders.filter(wo => wo.status === 'assigned').slice(0, 5);
+
+    return (
+      <div>
+        <div className="stats-grid" style={{ gridTemplateColumns: `repeat(${stats.length}, 1fr)` }}>
+          {stats.map(stat => (
+            <div className="stat-card" key={stat.label}>
+              <div className="stat-label">{stat.label}</div>
+              <div className="stat-value">{stat.value}</div>
+              <div className={`stat-sub ${stat.subCls}`}>{stat.sub}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="enduser-dashboard-grid">
+          <div className="card">
+            <div className="card-header">
+              <span className="card-title">Ready To Complete</span>
+              <button className="btn btn-sm" onClick={() => navigate('/work-orders')}>View tasks</button>
+            </div>
+            <div className="card-body">
+              {inProgressTasks.length === 0 ? (
+                <div className="empty-state" style={{ padding: '32px 12px' }}>
+                  <div className="empty-title">No tasks in progress</div>
+                  <div className="empty-sub">When work starts, completion photo upload will be available here.</div>
+                </div>
+              ) : (
+                <div className="enduser-request-list">
+                  {inProgressTasks.map(task => (
+                    <button key={task.id} className="enduser-request-card" onClick={() => setSelectedWO(task)}>
+                      <div className="enduser-request-top">
+                        <span className="enduser-request-ref">{task.refNumber}</span>
+                        <StatusBadge status={task.status} />
+                      </div>
+                      <div className="enduser-request-title">{task.title}</div>
+                      <div className="enduser-request-meta">{task.area} · completion photos required</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="card-header">
+              <span className="card-title">Queued Tasks</span>
+            </div>
+            <div className="card-body">
+              {queuedTasks.length === 0 ? (
+                <div className="empty-state" style={{ padding: '32px 12px' }}>
+                  <div className="empty-title">No queued tasks</div>
+                  <div className="empty-sub">Assigned tasks waiting to start will show here.</div>
+                </div>
+              ) : (
+                <div className="enduser-request-list">
+                  {queuedTasks.map(task => (
+                    <button key={task.id} className="enduser-request-card" onClick={() => setSelectedWO(task)}>
+                      <div className="enduser-request-top">
+                        <span className="enduser-request-ref">{task.refNumber}</span>
+                        <StatusBadge status={task.status} />
+                      </div>
+                      <div className="enduser-request-title">{task.title}</div>
+                      <div className="enduser-request-meta">{task.area} · Due {task.due}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

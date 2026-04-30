@@ -94,6 +94,54 @@ async def create_work_order_with_photos(
     return svc.get_work_order_by_id(db, wo.id, current_user)
 
 
+@router.post("/{wo_id}/photos", response_model=WorkOrderOut)
+async def upload_photos(
+    wo_id: int,
+    photos: List[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Upload completion photos to an existing work order."""
+    wo = svc.get_work_order_by_id(db, wo_id, current_user)
+    await validate_work_order_photos(photos)
+    attachments = await save_work_order_photos(wo_id, photos)
+    for attachment in attachments:
+        db.add(attachment)
+    from app.models.work_order import ActivityLog
+    log = ActivityLog(
+        work_order_id=wo_id,
+        user_id=current_user.id,
+        action=f"Uploaded {len(photos)} completion photo(s)",
+    )
+    db.add(log)
+    db.commit()
+    return svc.get_work_order_by_id(db, wo_id, current_user)
+
+
+@router.post("/{wo_id}/complete", response_model=WorkOrderOut)
+async def complete_work(
+    wo_id: int,
+    note: Optional[str] = Form(None),
+    photos: List[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    wo = svc.get_work_order_by_id(db, wo_id, current_user)
+    from app.models.user import UserRole
+    from app.models.work_order import WOStatus
+    if current_user.role != UserRole.WORKMAN or wo.workman_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the assigned workman can complete this work")
+    if wo.status != WOStatus.INPROGRESS:
+        raise HTTPException(status_code=422, detail="Only in-progress work can be completed")
+    if not photos:
+        raise HTTPException(status_code=422, detail="At least one completion photo is required")
+    await validate_work_order_photos(photos)
+    attachments = await save_work_order_photos(wo.id, photos)
+    for attachment in attachments:
+        db.add(attachment)
+    return svc.complete_work_with_photos(db, wo.id, current_user, note)
+
+
 @router.post("/{wo_id}/escalate", response_model=WorkOrderOut)
 def request_escalation(
     wo_id: int,

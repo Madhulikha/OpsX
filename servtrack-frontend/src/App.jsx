@@ -18,6 +18,8 @@ import Login        from './pages/Login';
 import InviteSignup from './pages/InviteSignup';
 import RaiseRequest from './pages/RaiseRequest';
 import Placeholder  from './pages/Placeholder';
+import EndUsers     from './pages/EndUsers';
+import Workforce    from './pages/Workforce';
 
 import './styles/globals.css';
 
@@ -50,8 +52,9 @@ function AppShell() {
             <Route path="/contracts"     element={<Contracts />} />
             <Route path="/assets"        element={<Placeholder title="Assets & Inventory" phase="Phase 2" description="Track equipment, assign assets to work orders, and log condition reports." />} />
             <Route path="/analytics"     element={<Placeholder title="Analytics & Reports" phase="Phase 3" description="Per-role dashboards, SLA trends, contractor performance, and PDF exports." />} />
-            <Route path="/workforce"     element={<Placeholder title="Workforce" phase="Phase 2" description="Manage workmen, assign to supervisors, track attendance and skills." />} />
+            <Route path="/workforce"     element={<Workforce />} />
             <Route path="/raise"         element={<RaiseRequest />} />
+            <Route path="/end-users"     element={<EndUsers />} />
             {/* Catch-all */}
             <Route path="*"              element={<Navigate to="/dashboard" replace />} />
           </Routes>
@@ -89,10 +92,10 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <AppProvider>
+    <AppProvider>
+      <BrowserRouter>
         <AppRoutes />
-      </AppProvider>
-    </BrowserRouter>
+      </BrowserRouter>
+    </AppProvider>
   );
 }

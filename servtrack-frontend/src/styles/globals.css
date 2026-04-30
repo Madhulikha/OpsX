@@ -379,7 +379,10 @@ body {
 .priority-high   { color: var(--danger); font-weight: 600; }
 .priority-med    { color: var(--warning); font-weight: 600; }
 .priority-low    { color: var(--text-2); }
+.priority-major  { color: #7c3aed; font-weight: 700; }
 
+.field-error  { color: var(--danger); font-size: 11px; margin-top: 4px; }
+.input-error  { border-color: var(--danger) !important; }
 /* ===========================
    Forms
    =========================== */

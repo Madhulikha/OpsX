@@ -101,6 +101,8 @@ create table if not exists users (
     contractor_id     integer         references contractors(id) on delete set null,
     client_id         integer         references clients(id) on delete set null,
     client_subrole    varchar(50),
+    otp_code          varchar(10),
+    otp_expires_at    timestamptz,
     is_active         boolean         not null default true,
     created_at        timestamptz     not null default now()
 );

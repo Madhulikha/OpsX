@@ -1,7 +1,9 @@
 alter type wo_status add value if not exists 'rejected';
 
 alter table users
-    add column if not exists client_subrole varchar(50);
+    add column if not exists client_subrole varchar(50),
+    add column if not exists otp_code varchar(10),
+    add column if not exists otp_expires_at timestamptz;
 
 create index if not exists idx_users_client_subrole on users(client_subrole);
 

@@ -44,6 +44,8 @@ class User(Base):
         nullable=True, index=True,
     )
     client_subrole: Mapped[str] = mapped_column(String(50), nullable=True, index=True)
+    otp_code: Mapped[str] = mapped_column(String(255), nullable=True)
+    otp_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
 
     is_active: Mapped[bool]  = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

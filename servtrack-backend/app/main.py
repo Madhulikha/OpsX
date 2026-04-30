@@ -60,4 +60,7 @@ def ensure_runtime_tables():
         conn.execute(text("alter table users add column if not exists client_subrole varchar(50)"))
         conn.execute(text("alter table work_orders add column if not exists sub_category varchar(120)"))
         conn.execute(text("alter table work_orders add column if not exists preferred_visit_time varchar(80)"))
+        conn.execute(text("alter table users add column if not exists otp_code varchar(255)"))
+        conn.execute(text("alter table users alter column otp_code type varchar(255)"))
+        conn.execute(text("alter table users add column if not exists otp_expires_at timestamptz"))
     WorkOrderAttachment.__table__.create(bind=engine, checkfirst=True)
