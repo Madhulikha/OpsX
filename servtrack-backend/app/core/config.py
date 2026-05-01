@@ -30,3 +30,5 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+print("ENV ALLOWED_ORIGINS:", settings.ALLOWED_ORIGINS)
+print("ORIGINS LIST:", settings.origins_list)
