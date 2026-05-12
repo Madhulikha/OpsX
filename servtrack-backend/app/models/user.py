@@ -1,13 +1,14 @@
 import enum
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 
 
 class UserRole(str, enum.Enum):
+    SUPERADMIN = "superadmin"
     CLIENT     = "client"
     CONTRACTOR = "contractor"
     SUPERVISOR = "supervisor"
@@ -25,14 +26,23 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int]          = mapped_column(Integer, primary_key=True, index=True)
-    email: Mapped[str]       = mapped_column(String(255), unique=True, index=True, nullable=False)
-    full_name: Mapped[str]   = mapped_column(String(255), nullable=False)
+    email: Mapped[str]       = mapped_column(Text, unique=True, index=True, nullable=False)
+    full_name: Mapped[str]   = mapped_column(Text, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    end_user_code: Mapped[str] = mapped_column(String(40), nullable=True, index=True)
+    email_lookup_hash: Mapped[str] = mapped_column(String(64), nullable=True, index=True)
+    phone_lookup_hash: Mapped[str] = mapped_column(String(64), nullable=True, index=True)
 
     role: Mapped[UserRole] = mapped_column(
         Enum(UserRole, name="user_role", native_enum=True, values_callable=lambda obj: [e.value for e in obj])
     )
-    phone: Mapped[str]       = mapped_column(String(20), nullable=True)
+    phone: Mapped[str]       = mapped_column(String(255), nullable=True)
+    address_line1: Mapped[str] = mapped_column(Text, nullable=True)
+    address_line2: Mapped[str] = mapped_column(Text, nullable=True)
+    city: Mapped[str] = mapped_column(Text, nullable=True)
+    state: Mapped[str] = mapped_column(Text, nullable=True)
+    postal_code: Mapped[str] = mapped_column(Text, nullable=True)
+    country: Mapped[str] = mapped_column(Text, nullable=True)
 
     # Contractor FK — set for supervisors and workmen
     contractor_id: Mapped[int] = mapped_column(

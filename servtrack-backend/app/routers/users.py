@@ -1,8 +1,7 @@
 import csv
 import io
-import random
 import re
-import string
+import secrets
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -10,25 +9,43 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_roles
+from app.core.pii import (
+    email_lookup_hash,
+    encrypt_pii,
+    normalize_email,
+    normalize_phone,
+    phone_lookup_hash,
+)
 from app.core.security import hash_password
 from app.models.client import ClientContractorLink, ClientContractorStatus
 from app.models.contractor import Contractor
-from app.models.user import User, UserRole
-from app.schemas.user import ContractorUserInviteRequest, UserOut, UserUpdate
-from app.services.email_service import build_contractor_user_invite_url, send_contractor_user_invite
+from app.models.user import ClientSubRole, User, UserRole
+from app.schemas.user import ClientEngineerInviteRequest, ContractorUserInviteRequest, UserOut, UserUpdate
+from app.services.email_service import (
+    build_client_invite_url,
+    build_contractor_user_invite_url,
+    send_client_invite,
+    send_contractor_user_invite,
+)
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
 
 def normalise_phone(value: str | None) -> str | None:
-    if not value:
-        return None
-    cleaned = "".join(ch for ch in value.strip() if ch.isdigit() or ch == "+")
-    return cleaned or None
+    return normalize_phone(value)
+
+
+def otp_only_password() -> str:
+    return f"otp-only-{secrets.token_urlsafe(32)}"
 
 
 def looks_like_email(value: str) -> bool:
     return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", value))
+
+
+def require_commandant_engineer(current_user: User) -> None:
+    if current_user.role != UserRole.CLIENT or current_user.client_subrole != "commandant_engineer":
+        raise HTTPException(status_code=403, detail="Only commandant engineers can manage end users")
 
 
 @router.get("/", response_model=List[UserOut])
@@ -45,6 +62,8 @@ def list_users(
         q = q.filter(User.client_id == current_user.client_id)
     if role:
         q = q.filter(User.role == role)
+        if role == UserRole.ENDUSER.value and current_user.role == UserRole.CLIENT:
+            require_commandant_engineer(current_user)
     if contractor_id:
         q = q.filter(User.contractor_id == contractor_id)
     if current_user.role == UserRole.CLIENT and contractor_id:
@@ -63,7 +82,31 @@ def list_users(
     if current_user.role == UserRole.SUPERVISOR:
         q = q.filter(User.contractor_id == current_user.contractor_id)
         q = q.filter(User.role.in_([UserRole.SUPERVISOR, UserRole.WORKMAN]))
-    return q.order_by(User.full_name).all()
+    users = q.order_by(User.id.desc() if role == UserRole.ENDUSER.value else User.full_name).all()
+    if role == UserRole.ENDUSER.value:
+        return [
+            {
+                "id": user.id,
+                "email": "",
+                "full_name": "Registered end user",
+                "role": user.role,
+                "end_user_code": user.end_user_code,
+                "phone": None,
+                "address_line1": None,
+                "address_line2": None,
+                "city": None,
+                "state": None,
+                "postal_code": None,
+                "country": None,
+                "contractor_id": user.contractor_id,
+                "client_id": user.client_id,
+                "client_subrole": user.client_subrole,
+                "is_active": user.is_active,
+                "created_at": user.created_at,
+            }
+            for user in users
+        ]
+    return users
 
 
 @router.post("/invite-contractor-user")
@@ -94,6 +137,47 @@ def invite_contractor_user(
     }
 
 
+@router.post("/invite-client-engineer")
+def invite_client_engineer(
+    payload: ClientEngineerInviteRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.CLIENT)),
+):
+    require_commandant_engineer(current_user)
+    if current_user.client_id is None:
+        raise HTTPException(status_code=422, detail="Your account is not linked to a client")
+
+    email = payload.email.lower()
+    existing = db.query(User).filter(User.email == email).first()
+    if existing:
+        if existing.role == UserRole.CLIENT and existing.client_id == current_user.client_id:
+            raise HTTPException(status_code=409, detail="This engineer is already registered for your client")
+        raise HTTPException(status_code=409, detail="Email already registered")
+
+    invite_url = build_client_invite_url(
+        email,
+        current_user.client_id,
+        current_user.client_account.name if current_user.client_account else "your client",
+        payload.full_name.strip(),
+        payload.client_subrole.value,
+    )
+    role_label = "junior engineer" if payload.client_subrole == ClientSubRole.JUNIOR_ENGINEER else "assistant engineer"
+    invite_sent = send_client_invite(
+        email,
+        current_user.client_account.name if current_user.client_account else "your client",
+        current_user,
+        invite_url,
+        role_label,
+    )
+    return {
+        "email": email,
+        "full_name": payload.full_name.strip(),
+        "client_subrole": payload.client_subrole.value,
+        "invite_sent": invite_sent,
+        "invite_url": None if invite_sent else invite_url,
+    }
+
+
 @router.get("/{user_id}", response_model=UserOut)
 def get_user(
     user_id: int,
@@ -115,12 +199,13 @@ async def bulk_create_endusers(
 ) -> Dict[str, Any]:
     """
     Upload a CSV to bulk-create end users.
-    Required columns: name, email
-    Optional columns: phone
-    Returns created users with their temporary passwords.
+    Required columns: id, name, email
+    Optional columns: phone, address_line1, address_line2, city, state, postal_code, country
+    Returns created users. End users are OTP-only and do not receive passwords.
     """
     if not file.filename or not file.filename.endswith(".csv"):
         raise HTTPException(status_code=422, detail="Only .csv files are accepted")
+    require_commandant_engineer(current_user)
     if current_user.client_id is None:
         raise HTTPException(status_code=422, detail="Your account is not linked to a client")
 
@@ -130,9 +215,12 @@ async def bulk_create_endusers(
     except Exception:
         raise HTTPException(status_code=422, detail="Could not parse CSV file")
 
-    required = {"name", "email"}
+    required = {"id", "name", "email"}
     if not reader.fieldnames or not required.issubset({f.strip().lower() for f in reader.fieldnames}):
-        raise HTTPException(status_code=422, detail="CSV must have columns: name, email (optional: phone)")
+        raise HTTPException(
+            status_code=422,
+            detail="CSV must have columns: id, name, email (optional: phone, address_line1, address_line2, city, state, postal_code, country)",
+        )
 
     rows = list(reader)
     if not rows:
@@ -148,32 +236,73 @@ async def bulk_create_endusers(
     created = []
     skipped = []
     for row in normalised:
-        email = row.get("email", "").lower()
+        end_user_code = row.get("id", "").strip()
+        email = normalize_email(row.get("email", ""))
         name = row.get("name", "")
         phone = normalise_phone(row.get("phone", ""))
-        if not email or not name:
-            skipped.append({"row": row, "reason": "Missing name or email"})
+        address_line1 = row.get("address_line1", "")
+        address_line2 = row.get("address_line2", "")
+        city = row.get("city", "")
+        state = row.get("state", "")
+        postal_code = row.get("postal_code", "")
+        country = row.get("country", "") or "India"
+        if not end_user_code or not email or not name:
+            skipped.append({"row": row, "reason": "Missing id, name, or email"})
             continue
         if not looks_like_email(email):
             skipped.append({"email": email, "reason": "Invalid email"})
             continue
-        if db.query(User).filter(User.email == email).first():
+        if db.query(User).filter(
+            User.role == UserRole.ENDUSER,
+            User.client_id == current_user.client_id,
+            User.end_user_code == end_user_code,
+        ).first():
+            skipped.append({"id": end_user_code, "email": email, "reason": "End user ID already exists"})
+            continue
+        email_hash = email_lookup_hash(email)
+        phone_hash = phone_lookup_hash(phone)
+        if db.query(User).filter(
+            User.role == UserRole.ENDUSER,
+            User.email_lookup_hash == email_hash,
+        ).first() or db.query(User).filter(User.email == email).first():
             skipped.append({"email": email, "reason": "Email already registered"})
             continue
-        if phone and db.query(User).filter(User.phone == phone).first():
+        if phone and db.query(User).filter(
+            User.role == UserRole.ENDUSER,
+            User.phone_lookup_hash == phone_hash,
+        ).first():
             skipped.append({"email": email, "reason": "Phone number already registered"})
             continue
-        temp_password = ''.join(random.choices(string.ascii_letters + string.digits, k=10))
         user = User(
-            email=email,
-            full_name=name,
-            hashed_password=hash_password(temp_password),
+            email=encrypt_pii(email),
+            full_name=encrypt_pii(name),
+            hashed_password=hash_password(otp_only_password()),
             role=UserRole.ENDUSER,
-            phone=phone,
+            end_user_code=end_user_code,
+            phone=encrypt_pii(phone),
+            address_line1=encrypt_pii(address_line1),
+            address_line2=encrypt_pii(address_line2),
+            city=encrypt_pii(city),
+            state=encrypt_pii(state),
+            postal_code=encrypt_pii(postal_code),
+            country=encrypt_pii(country),
+            email_lookup_hash=email_hash,
+            phone_lookup_hash=phone_hash,
             client_id=current_user.client_id,
         )
         db.add(user)
-        created.append({"name": name, "email": email, "phone": phone})
+        created.append({
+            "id": end_user_code,
+            "name": name,
+            "email": email,
+            "phone": phone,
+            "address_line1": address_line1,
+            "address_line2": address_line2,
+            "city": city,
+            "state": state,
+            "postal_code": postal_code,
+            "country": country,
+        })
 
     db.commit()
     return {"created": created, "skipped": skipped, "total_created": len(created), "total_skipped": len(skipped)}
@@ -190,7 +319,33 @@ def update_user(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    for k, v in payload.model_dump(exclude_unset=True).items():
+    updates = payload.model_dump(exclude_unset=True)
+    if user.role == UserRole.ENDUSER:
+        if current_user.role == UserRole.CLIENT and current_user.client_id != user.client_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        if "end_user_code" in updates:
+            code = (updates.pop("end_user_code") or "").strip()
+            if not code:
+                raise HTTPException(status_code=422, detail="End user ID cannot be empty")
+            duplicate = db.query(User).filter(
+                User.role == UserRole.ENDUSER,
+                User.client_id == user.client_id,
+                User.end_user_code == code,
+                User.id != user.id,
+            ).first()
+            if duplicate:
+                raise HTTPException(status_code=409, detail="End user ID already exists")
+            user.end_user_code = code
+        if "full_name" in updates:
+            user.full_name = encrypt_pii(updates.pop("full_name") or "")
+        if "phone" in updates:
+            phone = normalise_phone(updates.pop("phone"))
+            user.phone = encrypt_pii(phone)
+            user.phone_lookup_hash = phone_lookup_hash(phone)
+        for field in ["address_line1", "address_line2", "city", "state", "postal_code", "country"]:
+            if field in updates:
+                setattr(user, field, encrypt_pii(updates.pop(field) or ""))
+    for k, v in updates.items():
         setattr(user, k, v)
     db.commit()
     db.refresh(user)

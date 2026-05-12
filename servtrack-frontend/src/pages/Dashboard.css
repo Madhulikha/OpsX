@@ -32,6 +32,36 @@
   color: var(--text-3);
 }
 
+.loading-text {
+  color: var(--text-3) !important;
+  font-size: 14px !important;
+}
+
+.dashboard-loading-list {
+  display: grid;
+  gap: 10px;
+  padding: 12px 2px;
+}
+
+.dashboard-loading-line {
+  width: 100%;
+  height: 14px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--bg) 0%, #eceff3 50%, var(--bg) 100%);
+}
+
+.dashboard-loading-line.strong {
+  width: 68%;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 13px;
+  height: auto;
+}
+
+.dashboard-loading-line.short {
+  width: 54%;
+}
+
 .enduser-dashboard-grid {
   display: grid;
   grid-template-columns: 1.4fr 1fr;

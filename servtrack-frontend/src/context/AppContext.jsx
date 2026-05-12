@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 const AppContext = createContext(null);
 
@@ -129,15 +129,21 @@ export function AppProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [dataLoading, setDataLoading] = useState(false);
+  const [dataReady, setDataReady] = useState(false);
   const [workOrders, setWorkOrders] = useState([]);
   const [contractors, setContractors] = useState([]);
   const [contracts, setContracts] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [dashboardStats, setDashboardStats] = useState(null);
+  const [adminOverview, setAdminOverview] = useState(null);
+  const [adminClients, setAdminClients] = useState([]);
   const [usersByQuery, setUsersByQuery] = useState({});
   const [toasts, setToasts] = useState([]);
+  const refreshInFlightRef = useRef(false);
+  const lastRefreshAtRef = useRef(0);
 
   const role = currentUser?.role || null;
+  const isCommandantEngineer = role === 'client' && currentUser?.client_subrole === 'commandant_engineer';
   const isAuthenticated = Boolean(token && currentUser);
 
   const showToast = useCallback((message, type = 'default') => {
@@ -203,30 +209,59 @@ export function AppProvider({ children }) {
     return data;
   }, [apiFetch]);
 
+  const loadAdminData = useCallback(async () => {
+    const [overview, clients] = await Promise.all([
+      apiFetch('/admin/overview'),
+      apiFetch('/admin/clients'),
+    ]);
+    setAdminOverview(overview);
+    setAdminClients(clients);
+    return { overview, clients };
+  }, [apiFetch]);
+
   const loadUsers = useCallback(async ({ role: userRole, contractorId } = {}) => {
     const params = new URLSearchParams();
     if (userRole) params.set('role', userRole);
     if (contractorId) params.set('contractor_id', contractorId);
     const key = params.toString() || 'all';
-    const data = await apiFetch(`/users${params.toString() ? `?${params.toString()}` : ''}`);
+    const data = await apiFetch(`/users/${params.toString() ? `?${params.toString()}` : ''}`);
     setUsersByQuery(prev => ({ ...prev, [key]: data }));
     return data;
   }, [apiFetch]);
 
-  const loadAppData = useCallback(async () => {
-    setDataLoading(true);
+  const loadAppData = useCallback(async (targetUser = currentUser, { showLoading = true } = {}) => {
+    const targetRole = typeof targetUser === 'string' ? targetUser : targetUser?.role;
+    const targetSubrole = typeof targetUser === 'string' ? currentUser?.client_subrole : targetUser?.client_subrole;
+    if (showLoading) {
+      setDataReady(false);
+      setDataLoading(true);
+    }
     try {
-      await Promise.all([
+      if (targetRole === 'superadmin') {
+        await loadAdminData();
+        setWorkOrders([]);
+        setNotifications([]);
+        setContractors([]);
+        setContracts([]);
+        setDashboardStats(null);
+        setDataReady(true);
+        return;
+      }
+      const canLoadContracts = targetRole !== 'client' || targetSubrole === 'commandant_engineer';
+      const loaders = [
         loadWorkOrders(),
         loadNotifications(),
         loadContractors(),
-        loadContracts(),
+        canLoadContracts ? loadContracts() : Promise.resolve([]),
         loadDashboardStats(),
-      ]);
+      ];
+      const [, , , contractData] = await Promise.all(loaders);
+      if (!canLoadContracts) setContracts(contractData);
+      setDataReady(true);
     } finally {
-      setDataLoading(false);
+      if (showLoading) setDataLoading(false);
     }
-  }, [loadContractors, loadContracts, loadDashboardStats, loadNotifications, loadWorkOrders]);
+  }, [currentUser, loadAdminData, loadContractors, loadContracts, loadDashboardStats, loadNotifications, loadWorkOrders]);
 
   const hydrateSession = useCallback(async () => {
     if (!token) {
@@ -237,7 +272,7 @@ export function AppProvider({ children }) {
     try {
       const user = await apiFetch('/auth/me');
       setCurrentUser(user);
-      await loadAppData();
+      await loadAppData(user);
     } catch (error) {
       localStorage.removeItem(TOKEN_KEY);
       setToken(null);
@@ -248,19 +283,28 @@ export function AppProvider({ children }) {
   }, [apiFetch, loadAppData, token]);
 
   useEffect(() => {
+    if (currentUser) return;
     hydrateSession();
-  }, [hydrateSession]);
+  }, [currentUser, hydrateSession]);
 
   useEffect(() => {
     if (!isAuthenticated) return undefined;
 
     const refresh = () => {
-      loadAppData().catch(() => {});
+      const now = Date.now();
+      if (refreshInFlightRef.current || now - lastRefreshAtRef.current < 30000) return;
+      refreshInFlightRef.current = true;
+      lastRefreshAtRef.current = now;
+      loadAppData(currentUser, { showLoading: false })
+        .catch(() => {})
+        .finally(() => {
+          refreshInFlightRef.current = false;
+        });
     };
 
     const intervalId = window.setInterval(() => {
       if (!document.hidden) refresh();
-    }, 10000);
+    }, 30000);
 
     const handleFocus = () => refresh();
     const handleVisibilityChange = () => {
@@ -274,7 +318,7 @@ export function AppProvider({ children }) {
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [isAuthenticated, loadAppData]);
+  }, [currentUser, isAuthenticated, loadAppData]);
 
   const login = useCallback(async (email, password) => {
     const data = await fetch(`${API_BASE_URL}/auth/login`, {
@@ -286,31 +330,51 @@ export function AppProvider({ children }) {
     localStorage.setItem(TOKEN_KEY, data.access_token);
     setToken(data.access_token);
     setCurrentUser(data.user);
-    await Promise.all([
-      (async () => {
-        const authedFetch = async (path) => {
-          const response = await fetch(`${API_BASE_URL}${path}`, {
-            headers: { Authorization: `Bearer ${data.access_token}` },
-          });
-          return parseJson(response);
-        };
+    setDataReady(false);
+    setDataLoading(true);
+    const authedFetch = async (path) => {
+      const response = await fetch(`${API_BASE_URL}${path}`, {
+        headers: { Authorization: `Bearer ${data.access_token}` },
+      });
+      return parseJson(response);
+    };
 
-        const [woData, notifData, contractorData, contractData, statsData] = await Promise.all([
-          authedFetch('/work-orders/'),
-          authedFetch('/notifications/'),
-          authedFetch('/contractors/'),
-          authedFetch('/contractors/contracts'),
-          authedFetch('/work-orders/dashboard-stats'),
+    try {
+      if (data.user.role === 'superadmin') {
+        const [overview, clients] = await Promise.all([
+          authedFetch('/admin/overview'),
+          authedFetch('/admin/clients'),
         ]);
+        setAdminOverview(overview);
+        setAdminClients(clients);
+        setWorkOrders([]);
+        setNotifications([]);
+        setContractors([]);
+        setContracts([]);
+        setDashboardStats(null);
+        setDataReady(true);
+        return data.user;
+      }
 
-        setWorkOrders(woData.map(item => mapWorkOrder(item)));
-        setNotifications(notifData.map(mapNotification));
-        setContractors(contractorData);
-        setContracts(contractData);
-        setDashboardStats(statsData);
-      })(),
-    ]);
-    return data.user;
+      const shouldLoadContracts = data.user.role !== 'client' || data.user.client_subrole === 'commandant_engineer';
+      const [woData, notifData, contractorData, contractData, statsData] = await Promise.all([
+        authedFetch('/work-orders/'),
+        authedFetch('/notifications/'),
+        authedFetch('/contractors/'),
+        shouldLoadContracts ? authedFetch('/contractors/contracts') : Promise.resolve([]),
+        authedFetch('/work-orders/dashboard-stats'),
+      ]);
+
+      setWorkOrders(woData.map(item => mapWorkOrder(item)));
+      setNotifications(notifData.map(mapNotification));
+      setContractors(contractorData);
+      setContracts(contractData);
+      setDashboardStats(statsData);
+      setDataReady(true);
+      return data.user;
+    } finally {
+      setDataLoading(false);
+    }
   }, []);
 
   const acceptInvite = useCallback(async ({ token: inviteToken, fullName, password, phone }) => {
@@ -328,6 +392,8 @@ export function AppProvider({ children }) {
     localStorage.setItem(TOKEN_KEY, data.access_token);
     setToken(data.access_token);
     setCurrentUser(data.user);
+    setDataReady(false);
+    setDataLoading(true);
 
     const authedFetch = async (path) => {
       const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -336,33 +402,57 @@ export function AppProvider({ children }) {
       return parseJson(response);
     };
 
-    const [woData, notifData, contractorData, contractData, statsData] = await Promise.all([
-      authedFetch('/work-orders/'),
-      authedFetch('/notifications/'),
-      authedFetch('/contractors/'),
-      authedFetch('/contractors/contracts'),
-      authedFetch('/work-orders/dashboard-stats'),
-    ]);
+    try {
+      const shouldLoadContracts = data.user.role !== 'client' || data.user.client_subrole === 'commandant_engineer';
+      const [woData, notifData, contractorData, contractData, statsData] = await Promise.all([
+        authedFetch('/work-orders/'),
+        authedFetch('/notifications/'),
+        authedFetch('/contractors/'),
+        shouldLoadContracts ? authedFetch('/contractors/contracts') : Promise.resolve([]),
+        authedFetch('/work-orders/dashboard-stats'),
+      ]);
 
-    setWorkOrders(woData.map(item => mapWorkOrder(item)));
-    setNotifications(notifData.map(mapNotification));
-    setContractors(contractorData);
-    setContracts(contractData);
-    setDashboardStats(statsData);
-    return data.user;
+      setWorkOrders(woData.map(item => mapWorkOrder(item)));
+      setNotifications(notifData.map(mapNotification));
+      setContractors(contractorData);
+      setContracts(contractData);
+      setDashboardStats(statsData);
+      setDataReady(true);
+      return data.user;
+    } finally {
+      setDataLoading(false);
+    }
   }, []);
 
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
     setToken(null);
     setCurrentUser(null);
+    setDataReady(false);
     setWorkOrders([]);
     setNotifications([]);
     setContractors([]);
     setContracts([]);
     setDashboardStats(null);
+    setAdminOverview(null);
+    setAdminClients([]);
     setUsersByQuery({});
   }, []);
+
+  const createClient = useCallback(async (form) => {
+    const payload = await apiFetch('/admin/clients', {
+      method: 'POST',
+      body: JSON.stringify({
+        client_name: form.clientName.trim(),
+        admin_full_name: form.adminFullName.trim(),
+        admin_email: form.adminEmail.trim(),
+        admin_phone: form.adminPhone.trim() || null,
+      }),
+    });
+    setAdminClients(prev => [payload.client, ...prev.filter(client => client.id !== payload.client.id)]);
+    await loadAdminData();
+    return payload;
+  }, [apiFetch, loadAdminData]);
 
   const loadWorkOrderDetail = useCallback(async (id) => {
     const payload = await apiFetch(`/work-orders/${id}`);
@@ -487,6 +577,18 @@ export function AppProvider({ children }) {
     });
   }, [apiFetch]);
 
+  const inviteClientEngineer = useCallback(async ({ email, fullName, phone, clientSubrole }) => {
+    return apiFetch('/users/invite-client-engineer', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: email.trim(),
+        full_name: fullName.trim(),
+        phone: phone?.trim() || null,
+        client_subrole: clientSubrole,
+      }),
+    });
+  }, [apiFetch]);
+
   const createContractor = useCallback(async (form) => {
     const payload = await apiFetch('/contractors/', {
       method: 'POST',
@@ -545,9 +647,11 @@ export function AppProvider({ children }) {
       apiBaseUrl: API_BASE_URL,
       authLoading,
       dataLoading,
+      dataReady,
       isAuthenticated,
       currentUser,
       role,
+      isCommandantEngineer,
       login,
       logout,
       workOrders,
@@ -563,6 +667,10 @@ export function AppProvider({ children }) {
       uploadWorkOrderPhotos,
       completeWorkOrder,
       dashboardStats,
+      adminOverview,
+      adminClients,
+      loadAdminData,
+      createClient,
       contractors,
       notifications,
       markNotifRead,
@@ -575,6 +683,7 @@ export function AppProvider({ children }) {
       loadContracts,
       createContract,
       inviteContractorUser,
+      inviteClientEngineer,
       acceptInvite,
       toasts,
       showToast,

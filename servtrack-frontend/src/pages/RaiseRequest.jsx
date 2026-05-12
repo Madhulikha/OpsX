@@ -14,7 +14,7 @@ const PREFERRED_TIME_SLOTS = [
 
 export default function RaiseRequest() {
   const navigate = useNavigate();
-  const { createWorkOrder, showToast, dataLoading } = useApp();
+  const { createWorkOrder, showToast } = useApp();
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [form, setForm] = useState({
@@ -124,7 +124,7 @@ export default function RaiseRequest() {
                 placeholder="Short summary of the issue"
                 value={form.title}
                 onChange={event => set('title', event.target.value)}
-                disabled={submitting || dataLoading}
+                disabled={submitting}
                 />
               {fieldError('title') && <div className="field-error">{fieldError('title')}</div>}
             </div>
@@ -136,7 +136,7 @@ export default function RaiseRequest() {
                   className="form-input"
                   value={form.category}
                   onChange={event => set('category', event.target.value)}
-                  disabled={submitting || dataLoading}
+                  disabled={submitting}
                 >
                   {CATEGORIES.map(category => <option key={category}>{category}</option>)}
                 </select>
@@ -148,7 +148,7 @@ export default function RaiseRequest() {
                   className={`form-input${fieldError('subCategory') ? ' input-error' : ''}`}
                   value={form.subCategory}
                   onChange={event => set('subCategory', event.target.value)}
-                  disabled={submitting || dataLoading}
+                  disabled={submitting}
                   required
                 >
                   {(REQUEST_CATEGORY_OPTIONS[form.category] || []).map(subCategory => (
@@ -166,7 +166,7 @@ export default function RaiseRequest() {
                   className={`form-input${fieldError('area') ? ' input-error' : ''}`}
                   value={form.area}
                   onChange={event => set('area', event.target.value)}
-                  disabled={submitting || dataLoading}
+                  disabled={submitting}
                   required
                 >
                   <option value="">Select area</option>
@@ -181,7 +181,7 @@ export default function RaiseRequest() {
                   className={`form-input${fieldError('preferredVisitTime') ? ' input-error' : ''}`}
                   value={form.preferredVisitTime}
                   onChange={event => set('preferredVisitTime', event.target.value)}
-                  disabled={submitting || dataLoading}
+                  disabled={submitting}
                   >
                   <option value="">Select a time slot</option>
                   {PREFERRED_TIME_SLOTS.map(slot => (
@@ -199,7 +199,7 @@ export default function RaiseRequest() {
                 placeholder="Explain the issue, what you observed, when it started, and anything that may help the maintenance team."
                 value={form.description}
                 onChange={event => set('description', event.target.value)}
-                disabled={submitting || dataLoading}
+                disabled={submitting}
                 />
               {fieldError('description') && <div className="field-error">{fieldError('description')}</div>}
             </div>
@@ -212,7 +212,7 @@ export default function RaiseRequest() {
                 accept="image/jpeg,image/png,image/webp"
                 multiple
                 onChange={handlePhotoChange}
-                disabled={submitting || dataLoading}
+                disabled={submitting}
               />
               <div className="text-xs text-2" style={{ marginTop: 6 }}>Upload up to 5 JPG, PNG, or WebP photos. Max 5 MB each.</div>
               {fieldError('photos') && <div className="field-error">{fieldError('photos')}</div>}
@@ -230,7 +230,7 @@ export default function RaiseRequest() {
 
             <div className="enduser-request-footer">
               <div className="text-2 text-sm">Your request will appear immediately under My Requests after submission.</div>
-              <button className="btn btn-primary" type="submit" disabled={submitting || dataLoading}>
+              <button className="btn btn-primary" type="submit" disabled={submitting}>
                 {submitting ? 'Submitting...' : 'Submit Request'}
               </button>
             </div>

@@ -15,11 +15,13 @@ import Notifications from './pages/Notifications';
 import Contractors  from './pages/Contractors';
 import Contracts    from './pages/Contracts';
 import Login        from './pages/Login';
+import Home         from './pages/Home';
 import InviteSignup from './pages/InviteSignup';
 import RaiseRequest from './pages/RaiseRequest';
 import Placeholder  from './pages/Placeholder';
 import EndUsers     from './pages/EndUsers';
 import Workforce    from './pages/Workforce';
+import AdminDashboard from './pages/AdminDashboard';
 
 import './styles/globals.css';
 
@@ -35,6 +37,8 @@ function FullPageMessage({ title, sub }) {
 }
 
 function AppShell() {
+  const { role, isCommandantEngineer } = useApp();
+
   return (
     <div className="app-shell">
       <Sidebar />
@@ -42,19 +46,20 @@ function AppShell() {
         <Header />
         <main className="page-content">
           <Routes>
-            <Route path="/"              element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard"     element={<Dashboard />} />
+            <Route path="/"              element={<Navigate to={role === 'superadmin' ? '/admin' : '/dashboard'} replace />} />
+            <Route path="/admin"         element={role === 'superadmin' ? <AdminDashboard /> : <Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard"     element={role === 'superadmin' ? <Navigate to="/admin" replace /> : <Dashboard />} />
             <Route path="/work-orders"   element={<WorkOrders />} />
             <Route path="/sla"           element={<SLATracker />} />
             <Route path="/approvals"     element={<Approvals />} />
             <Route path="/notifications" element={<Notifications />} />
             <Route path="/contractors"   element={<Contractors />} />
-            <Route path="/contracts"     element={<Contracts />} />
+            <Route path="/contracts"     element={isCommandantEngineer ? <Contracts /> : <Navigate to="/dashboard" replace />} />
             <Route path="/assets"        element={<Placeholder title="Assets & Inventory" phase="Phase 2" description="Track equipment, assign assets to work orders, and log condition reports." />} />
             <Route path="/analytics"     element={<Placeholder title="Analytics & Reports" phase="Phase 3" description="Per-role dashboards, SLA trends, contractor performance, and PDF exports." />} />
             <Route path="/workforce"     element={<Workforce />} />
             <Route path="/raise"         element={<RaiseRequest />} />
-            <Route path="/end-users"     element={<EndUsers />} />
+            <Route path="/end-users"     element={isCommandantEngineer ? <EndUsers /> : <Navigate to="/dashboard" replace />} />
             {/* Catch-all */}
             <Route path="*"              element={<Navigate to="/dashboard" replace />} />
           </Routes>
@@ -74,6 +79,10 @@ function AppRoutes() {
 
   return (
     <Routes>
+      <Route
+        path="/"
+        element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Home />}
+      />
       <Route
         path="/login"
         element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />}

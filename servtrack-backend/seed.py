@@ -51,6 +51,7 @@ def seed():
         sys.exit(1)
 
     # Users
+    superadmin = User(email="owner@servtrack.in", full_name="ServTrack Owner", hashed_password=hash_password("Owner@1234"), role=UserRole.SUPERADMIN)
     client_admin = User(email="admin@propertyclient.in",  full_name="Vikram Mehta",   hashed_password=hash_password("Admin@1234"),       role=UserRole.CLIENT, client_id=client_account.id, client_subrole="junior_engineer")
     assistant_engineer = User(email="assistant@propertyclient.in", full_name="Nisha Menon", hashed_password=hash_password("Admin@1234"), role=UserRole.CLIENT, client_id=client_account.id, client_subrole="assistant_engineer")
     commandant_engineer = User(email="commandant@propertyclient.in", full_name="Arun Prakash", hashed_password=hash_password("Admin@1234"), role=UserRole.CLIENT, client_id=client_account.id, client_subrole="commandant_engineer")
@@ -68,7 +69,7 @@ def seed():
     wm_kiran     = User(email="kiran@brightco.in",          full_name="Kiran Thakur",   hashed_password=hash_password("Work@1234"),        role=UserRole.WORKMAN,    contractor_id=brightco.id)
     wm_dev       = User(email="dev@alphaserv.in",           full_name="Dev Bose",       hashed_password=hash_password("Work@1234"),        role=UserRole.WORKMAN,    contractor_id=alphaserv.id)
 
-    all_users = [client_admin, assistant_engineer, commandant_engineer, enduser_1, enduser_2, enduser_3,
+    all_users = [superadmin, client_admin, assistant_engineer, commandant_engineer, enduser_1, enduser_2, enduser_3,
                  co_alpha, co_cool, co_bright,
                  sup_ramesh, sup_priya, sup_vijay,
                  wm_suresh, wm_arun, wm_kiran, wm_dev]
@@ -128,6 +129,7 @@ def seed():
     print("Seeding complete!")
     print()
     print("Demo credentials:")
+    print("  owner@servtrack.in     /  Owner@1234         (Super Admin)")
     print("  admin@propertyclient.in   /  Admin@1234         (Client)")
     print("  manager@alphaserv.in      /  Contractor@1234    (Contractor)")
     print("  ramesh@alphaserv.in       /  Super@1234         (Supervisor)")

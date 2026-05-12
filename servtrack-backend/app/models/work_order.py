@@ -45,12 +45,12 @@ class WOCategory(str, enum.Enum):
 STATUS_TRANSITIONS: dict[tuple[str, str], list[str]] = {
     ("open",       "client"):     ["assigned", "rejected"],
     ("rejected",   "enduser"):    ["open"],
-    ("assigned",   "contractor"): ["inprogress"],
-    ("assigned",   "supervisor"): ["inprogress"],
+    ("assigned",   "workman"):    ["inprogress"],
     ("inprogress", "workman"):    ["qc"],
     ("inprogress", "supervisor"): ["qc"],
     ("qc",         "supervisor"): ["pending", "inprogress"],
-    ("pending",    "client"):     ["closed", "inprogress"],   # approve or reject
+    ("pending",    "client"):     ["closed", "inprogress"],   # approve or reject client-raised work
+    ("pending",    "enduser"):    ["closed", "inprogress"],   # requester approval or rework
     ("escalated",  "client"):     ["inprogress", "closed"],
 }
 

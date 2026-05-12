@@ -17,13 +17,13 @@ const FILTERS = [
 ];
 
 export default function WorkOrders() {
-  const { role, workOrders } = useApp();
+  const { role, workOrders, dataReady } = useApp();
   const [statusFilter, setStatusFilter] = useState('all');
   const [search, setSearch]             = useState('');
   const [selectedWO, setSelectedWO]     = useState(null);
   const [showCreate, setShowCreate]     = useState(false);
 
-  const canCreate = ['client', 'contractor', 'supervisor'].includes(role);
+  const canCreate = role === 'client';
 
   const visibleWOs = useMemo(() => {
     let list = workOrders;
@@ -50,8 +50,8 @@ export default function WorkOrders() {
 
   const pageTitle = role === 'enduser' ? 'My Requests' : 'Service Requests';
   const pageSub = role === 'enduser'
-    ? `${roleWOs.length} request${roleWOs.length === 1 ? '' : 's'} you have raised`
-    : `${roleWOs.length} total in your scope`;
+    ? (dataReady ? `${roleWOs.length} request${roleWOs.length === 1 ? '' : 's'} you have raised` : 'Loading your requests...')
+    : (dataReady ? `${roleWOs.length} total in your scope` : 'Loading service requests...');
   const emptyTitle = role === 'enduser' ? 'No requests yet' : 'No service requests found';
   const emptySub = role === 'enduser'
     ? 'Raise your first maintenance request to start tracking it here.'
@@ -95,7 +95,12 @@ export default function WorkOrders() {
 
       {/* Table */}
       <div className="card">
-        {visibleWOs.length === 0 ? (
+        {!dataReady ? (
+          <div className="empty-state">
+            <div className="empty-title">Loading requests</div>
+            <div className="empty-sub">Fetching the latest tasks in your scope...</div>
+          </div>
+        ) : visibleWOs.length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon">🔧</div>
             <div className="empty-title">{emptyTitle}</div>

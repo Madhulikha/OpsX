@@ -4,6 +4,7 @@
 // ============================================================
 
 export const ROLES = {
+  superadmin: { label: 'Super Admin', avatar: 'SA', color: '#111827' },
   client:     { label: 'Engineer',    avatar: 'EN', color: '#1B4FD8' },
   contractor: { label: 'Contractor',  avatar: 'CO', color: '#059669' },
   supervisor: { label: 'Supervisor',  avatar: 'SV', color: '#7C3AED' },

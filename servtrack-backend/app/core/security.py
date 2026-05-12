@@ -39,9 +39,9 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
-def create_invite_token(data: dict) -> str:
+def create_invite_token(data: dict, token_type: str = "contractor_invite") -> str:
     invite_data = data.copy()
-    invite_data["token_type"] = "contractor_invite"
+    invite_data["token_type"] = token_type
     return create_access_token(
         invite_data,
         expires_delta=timedelta(minutes=settings.INVITE_TOKEN_EXPIRE_MINUTES),

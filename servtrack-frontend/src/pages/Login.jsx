@@ -3,13 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 
 const DEMO_USERS = [
+  { label: 'Super Admin',           email: 'owner@servtrack.in',        password: 'Owner@1234' },
   { label: 'Junior Engineer',       email: 'admin@propertyclient.in',       password: 'Admin@1234' },
   { label: 'Assistant Engineer',    email: 'assistant@propertyclient.in',   password: 'Admin@1234' },
   { label: 'Commandant Engineer',   email: 'commandant@propertyclient.in',  password: 'Admin@1234' },
   { label: 'Contractor',            email: 'manager@alphaserv.in',          password: 'Contractor@1234' },
   { label: 'Supervisor',            email: 'ramesh@alphaserv.in',           password: 'Super@1234' },
   { label: 'Workman',               email: 'suresh@alphaserv.in',           password: 'Work@1234' },
-  { label: 'End User',              email: 'security@property.in',          password: 'User@1234' },
 ];
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://127.0.0.1:8000/api/v1';
@@ -36,7 +36,6 @@ export default function Login() {
     try {
       await login(email, password);
       navigate('/dashboard', { replace: true });
-      showToast('Signed in successfully', 'success');
     } catch (error) {
       showToast(error.message || 'Login failed', 'danger');
     } finally {
@@ -59,6 +58,13 @@ export default function Login() {
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.detail || 'Failed to send OTP');
+      if (data.success === false) {
+        setDemoOtp('');
+        setOtpCode('');
+        setOtpStep('request');
+        showToast(data.message || 'Please contact your facility administrator', 'danger');
+        return;
+      }
       setDemoOtp(data.demo_otp || '');
       setOtpStep('verify');
       showToast(data.demo_otp ? 'OTP generated for local development' : 'OTP sent successfully', 'success');
@@ -125,7 +131,7 @@ export default function Login() {
         {tab === 'password' && (
           <>
             <h1 className="login-title">Sign in to ServTrack</h1>
-            <p className="login-sub">Engineers, contractors, supervisors, and workmen use email + password.</p>
+            <p className="login-sub">Admins, engineers, contractors, supervisors, and workmen use email + password. End users use OTP only.</p>
 
             {SHOW_DEMO_USERS && (
               <div className="login-demo-users">
@@ -173,7 +179,7 @@ export default function Login() {
         {tab === 'otp' && (
           <>
             <h1 className="login-title">OTP Login</h1>
-            <p className="login-sub">End users can sign in using a one-time password sent to their registered email or phone.</p>
+            <p className="login-sub">End users can sign in using a one-time password sent to their registered email or phone. Try security@property.in or +919876543210.</p>
 
             {otpStep === 'request' && (
               <form onSubmit={handleRequestOtp}>

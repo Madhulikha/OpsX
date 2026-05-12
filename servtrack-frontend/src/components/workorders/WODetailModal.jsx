@@ -274,6 +274,13 @@ export default function WODetailModal({ wo, onClose }) {
           </button>
         );
       }
+      if (liveWO.status === 'pending' && liveWO.raisedByUser?.role === 'enduser') {
+        return (
+          <div className="alert alert-info" style={{ display: 'block', margin: 0 }}>
+            Waiting for the end user to approve the completed work.
+          </div>
+        );
+      }
       if (liveWO.status === 'pending') {
         return showRejectInput ? (
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flex: 1 }}>
@@ -306,14 +313,25 @@ export default function WODetailModal({ wo, onClose }) {
       }
     }
 
-    if (role === 'contractor' && liveWO.status === 'assigned') {
+    if (role === 'contractor' && ['open', 'assigned'].includes(liveWO.status)) {
       return (
         <button
           className="btn btn-primary"
-          disabled={saving || !form.supervisorId}
-          onClick={() => runTransition('inprogress', 'Contractor assigned team and started work')}
+          disabled={saving || !form.supervisorId || !form.workmanId}
+          onClick={async () => {
+            setSaving(true);
+            try {
+              await persistEdits({ quiet: true });
+              showToast('Team assigned. Waiting for the workman to start work', 'success');
+              onClose();
+            } catch (error) {
+              showToast(error.message || 'Could not assign team', 'danger');
+            } finally {
+              setSaving(false);
+            }
+          }}
         >
-          Assign Team &amp; Start Work
+          Save Team Assignment
         </button>
       );
     }
@@ -321,8 +339,23 @@ export default function WODetailModal({ wo, onClose }) {
     if (role === 'supervisor') {
       if (liveWO.status === 'assigned') {
         return (
-          <button className="btn btn-primary" disabled={saving} onClick={() => runTransition('inprogress', 'Supervisor started work')}>
-            Start Work
+          <button
+            className="btn btn-primary"
+            disabled={saving || !form.workmanId}
+            onClick={async () => {
+              setSaving(true);
+              try {
+                await persistEdits({ quiet: true });
+                showToast('Workman assigned. Waiting for work to start', 'success');
+                onClose();
+              } catch (error) {
+                showToast(error.message || 'Could not assign workman', 'danger');
+              } finally {
+                setSaving(false);
+              }
+            }}
+          >
+            Save Workman Assignment
           </button>
         );
       }
@@ -361,6 +394,18 @@ export default function WODetailModal({ wo, onClose }) {
       }
     }
 
+    if (role === 'workman' && liveWO.status === 'assigned') {
+      return (
+        <button
+          className="btn btn-primary"
+          disabled={saving}
+          onClick={() => runTransition('inprogress', 'Work started')}
+        >
+          {saving ? 'Starting...' : 'Start Work'}
+        </button>
+      );
+    }
+
     if (role === 'workman' && liveWO.status === 'inprogress') {
       return (
         <button
@@ -371,6 +416,37 @@ export default function WODetailModal({ wo, onClose }) {
         >
           {saving ? 'Submitting...' : `Complete Work${completionPhotos.length > 0 ? ` (${completionPhotos.length} photo${completionPhotos.length !== 1 ? 's' : ''})` : ''}`}
         </button>
+      );
+    }
+
+    if (role === 'enduser' && liveWO.status === 'pending') {
+      return showRejectInput ? (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flex: 1 }}>
+          <input
+            className="form-input"
+            style={{ flex: 1, padding: '5px 10px', fontSize: 12 }}
+            placeholder="Reason for rework..."
+            value={rejectNote}
+            onChange={event => setRejectNote(event.target.value)}
+          />
+          <button
+            className="btn btn-danger btn-sm"
+            disabled={saving || !rejectNote.trim()}
+            onClick={() => runTransition('inprogress', 'Sent back for rework', rejectNote)}
+          >
+            Request Rework
+          </button>
+          <button className="btn btn-sm" onClick={() => setShowRejectInput(false)}>Cancel</button>
+        </div>
+      ) : (
+        <>
+          <button className="btn btn-success" disabled={saving} onClick={() => runTransition('closed', 'Request approved and closed')}>
+            Approve &amp; Close
+          </button>
+          <button className="btn btn-danger" disabled={saving} onClick={() => setShowRejectInput(true)}>
+            Request Rework
+          </button>
+        </>
       );
     }
 

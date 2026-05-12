@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Optional, List
 
 from fastapi import HTTPException, status
-from sqlalchemy import extract, func
+from sqlalchemy import extract, func, text
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.client import ClientContractorLink, ClientContractorStatus
@@ -24,8 +24,8 @@ from app.schemas.work_order import WorkOrderCreate, WorkOrderUpdate, DashboardSt
 # ── Reference number generator ────────────────────────────────────────────────
 
 def _next_ref(db: Session) -> str:
-    count = db.query(func.count(WorkOrder.id)).scalar() or 0
-    return f"WO-{count + 1:04d}"
+    next_value = db.execute(text("select nextval('work_order_ref_seq')")).scalar()
+    return f"WO-{int(next_value):04d}"
 
 
 # ── Notification helper ───────────────────────────────────────────────────────
@@ -119,6 +119,8 @@ def _log_activity(
 
 def _apply_role_scope(query, user: User):
     """Limit query to records the user should see."""
+    if user.role == UserRole.SUPERADMIN:
+        raise HTTPException(status_code=403, detail="Super admins use aggregate admin endpoints only")
     if user.role == UserRole.CLIENT:
         query = query.filter(WorkOrder.client_id == user.client_id)
         subrole = user.client_subrole
@@ -218,6 +220,8 @@ def _auto_due_date(priority, due_date_override=None):
     return datetime.now(timezone.utc) + timedelta(hours=hours)
 
 def create_work_order(db: Session, data: WorkOrderCreate, current_user: User) -> WorkOrder:
+    if current_user.role not in [UserRole.CLIENT, UserRole.ENDUSER]:
+        raise HTTPException(status_code=403, detail="Only client engineers and end users can raise service requests")
     if current_user.role in [UserRole.CLIENT, UserRole.ENDUSER] and current_user.client_id is None:
         raise HTTPException(status_code=422, detail="Your account is not linked to a client")
 
@@ -372,6 +376,8 @@ def update_work_order(
         expected_contractor_id = updates.get("contractor_id", wo.contractor_id)
         if expected_contractor_id and workman.contractor_id != expected_contractor_id:
             raise HTTPException(status_code=422, detail="Workman must belong to the assigned contractor")
+        if wo.status != WOStatus.OPEN and wo.workman_id != updates["workman_id"]:
+            _notify(db, updates["workman_id"], f"Work assigned — {wo.ref_number}", wo.title, "info", wo.id)
 
     if "contractor_id" in updates:
         _validate_client_contractor_link(db, wo.client_id, updates["contractor_id"])
@@ -379,13 +385,30 @@ def update_work_order(
     for field, value in updates.items():
         setattr(wo, field, value)
 
+    promoted_to_assigned = False
+    if (
+        current_user.role == UserRole.CONTRACTOR
+        and wo.status == WOStatus.OPEN
+        and wo.contractor_id
+        and (wo.supervisor_id or wo.workman_id)
+    ):
+        wo.status = WOStatus.ASSIGNED
+        promoted_to_assigned = True
+        if wo.workman_id:
+            _notify(db, wo.workman_id, f"Work assigned — {wo.ref_number}", wo.title, "info", wo.id)
+        if wo.supervisor_id:
+            _notify(db, wo.supervisor_id, f"Team assignment ready — {wo.ref_number}", wo.title, "info", wo.id)
+        _notify(db, wo.raised_by_id, f"Request assigned — {wo.ref_number}", wo.title, "info", wo.id)
+
     if current_user.role == UserRole.CLIENT and "contractor_id" in updates and updates["contractor_id"]:
         _notify_contractor_users(db, wo, "Work order assigned", wo.ref_number)
 
     _log_activity(
         db, wo.id, current_user.id,
-        action="Work order details updated",
+        action="Team assignment completed" if promoted_to_assigned else "Team assignment updated" if {"supervisor_id", "workman_id"} & set(updates.keys()) else "Work order details updated",
         note=", ".join(sorted(updates.keys())),
+        from_status=WOStatus.OPEN if promoted_to_assigned else None,
+        to_status=WOStatus.ASSIGNED if promoted_to_assigned else None,
     )
     db.commit()
     db.refresh(wo)
@@ -407,12 +430,23 @@ def transition_status(
     # Validate transition
     if old_status == "open" and new_status in ["assigned", "rejected"]:
         _ensure_client_can_approve(wo, current_user)
+        if new_status == "assigned" and not wo.contractor_id:
+            raise HTTPException(status_code=422, detail="Select a linked contractor before assigning this request")
+
+    if old_status == "pending" and current_user.role == UserRole.CLIENT and wo.raised_by_user and wo.raised_by_user.role == UserRole.ENDUSER:
+        raise HTTPException(status_code=403, detail="This request is pending approval from the end user who raised it")
+
+    if old_status == "pending" and current_user.role == UserRole.ENDUSER and wo.raised_by_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the requester can approve or reject this completed work")
 
     if not can_transition(old_status, new_status, current_user.role.value):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Role '{current_user.role.value}' cannot move WO from '{old_status}' to '{new_status}'",
         )
+
+    if current_user.role == UserRole.WORKMAN and new_status == "inprogress" and wo.workman_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the assigned workman can start this work order")
 
     wo.status = WOStatus(new_status)
 
@@ -469,8 +503,10 @@ def _fire_transition_notifications(
         _notify(db, wo.raised_by_id, f"Work started — {ref}", wo.title, "info", wo.id)
 
     elif new_status == "pending":
-        # Notify all client users
-        _notify_client_users(db, f"Approval required — {ref}", wo.title, "warning", wo.client_id, wo.id)
+        if wo.raised_by_user and wo.raised_by_user.role == UserRole.ENDUSER:
+            _notify(db, wo.raised_by_id, f"Work ready for your approval — {ref}", wo.title, "warning", wo.id)
+        else:
+            _notify_client_users(db, f"Approval required — {ref}", wo.title, "warning", wo.client_id, wo.id)
 
     elif new_status == "qc":
         if wo.supervisor_id:
@@ -478,9 +514,9 @@ def _fire_transition_notifications(
 
     elif new_status == "closed":
         _notify(db, wo.raised_by_id, f"WO Closed — {ref}", wo.title, "success", wo.id)
+        _notify_client_users(db, f"Request closed — {ref}", wo.title, "success", wo.client_id, wo.id)
 
     elif new_status == "inprogress" and old_status == "pending":
-        # Rejected
         _notify_contractor_users(db, wo, f"WO Rejected — rework required — {ref}", wo.title)
 
     elif new_status == "inprogress" and old_status == "qc":

@@ -95,6 +95,7 @@ class ContractCreate(BaseModel):
 
 class ContractOut(BaseModel):
     id: int
+    client_id: Optional[int] = None
     contractor_id: int
     title: str
     scope: Optional[str]

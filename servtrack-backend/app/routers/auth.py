@@ -8,11 +8,17 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.pii import decrypt_pii, email_lookup_hash, normalize_email, normalize_phone, phone_lookup_hash
 from app.core.security import hash_password, verify_password, create_access_token, decode_token
 from app.models.contractor import Contractor
 from app.models.user import User, UserRole
 from app.schemas.user import InviteAcceptRequest, LoginRequest, OtpRequest, OtpRequestResponse, OtpVerify, TokenResponse, UserCreate, UserOut
-from app.services.email_service import send_enduser_otp
+from app.services.email_service import (
+    check_twilio_phone_verification,
+    send_enduser_otp,
+    start_twilio_phone_verification,
+    twilio_verify_configured,
+)
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -20,16 +26,22 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 def normalise_identifier(identifier: str) -> str:
     value = identifier.strip().lower()
     if "@" in value:
-        return value
-    return "".join(ch for ch in value if ch.isdigit() or ch == "+")
+        return normalize_email(value)
+    return normalize_phone(value) or value
 
 
 def find_enduser_by_identifier(identifier: str, db: Session) -> User | None:
     value = normalise_identifier(identifier)
     if "@" in value:
-        return db.query(User).filter(User.email == value).first()
+        return db.query(User).filter(
+            User.role == UserRole.ENDUSER,
+            User.email_lookup_hash == email_lookup_hash(value),
+        ).first()
 
-    matches = db.query(User).filter(User.phone == value).all()
+    matches = db.query(User).filter(
+        User.role == UserRole.ENDUSER,
+        User.phone_lookup_hash == phone_lookup_hash(value),
+    ).all()
     if len(matches) > 1:
         raise HTTPException(
             status_code=409,
@@ -41,13 +53,20 @@ def find_enduser_by_identifier(identifier: str, db: Session) -> User | None:
 @router.post("/login", response_model=TokenResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == payload.email).first()
-    if not user or not verify_password(payload.password, user.hashed_password):
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
         )
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account is deactivated")
+    if user.role == UserRole.ENDUSER:
+        raise HTTPException(status_code=403, detail="End users sign in with OTP only")
+    if not verify_password(payload.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+        )
 
     token = create_access_token({"sub": str(user.id), "role": user.role.value})
     return TokenResponse(access_token=token, user=UserOut.model_validate(user))
@@ -55,6 +74,10 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
 @router.post("/register", response_model=UserOut, status_code=201)
 def register(payload: UserCreate, db: Session = Depends(get_db)):
+    if payload.role == UserRole.SUPERADMIN:
+        raise HTTPException(status_code=403, detail="Super admin accounts must be created directly by the app owner")
+    if settings.APP_ENV != "development":
+        raise HTTPException(status_code=403, detail="Public registration is disabled")
     if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
 
@@ -77,10 +100,33 @@ def register(payload: UserCreate, db: Session = Depends(get_db)):
 @router.post("/accept-invite", response_model=TokenResponse, status_code=201)
 def accept_invite(payload: InviteAcceptRequest, db: Session = Depends(get_db)):
     invite = decode_token(payload.token)
-    if not invite or invite.get("token_type") not in ["contractor_invite", "contractor_user_invite"]:
+    if not invite or invite.get("token_type") not in ["contractor_invite", "contractor_user_invite", "client_invite"]:
         raise HTTPException(status_code=400, detail="Invite link is invalid or expired")
 
     email = invite.get("email") or invite.get("sub")
+    if invite.get("token_type") == "client_invite":
+        client_id = invite.get("client_id")
+        if not email or not client_id:
+            raise HTTPException(status_code=400, detail="Invite link is missing client details")
+        if db.query(User).filter(User.email == email).first():
+            raise HTTPException(status_code=400, detail="Email already registered")
+
+        user = User(
+            email=email,
+            full_name=payload.full_name,
+            hashed_password=hash_password(payload.password),
+            role=UserRole.CLIENT,
+            phone=payload.phone,
+            client_id=client_id,
+            client_subrole=invite.get("client_subrole") or "commandant_engineer",
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        token = create_access_token({"sub": str(user.id), "role": user.role.value})
+        return TokenResponse(access_token=token, user=UserOut.model_validate(user))
+
     contractor_id = invite.get("contractor_id")
     invite_role = invite.get("invite_role") or UserRole.CONTRACTOR.value
     if not email or not contractor_id:
@@ -121,17 +167,38 @@ def me(current_user: User = Depends(get_current_user)):
 
 @router.post("/request-otp", response_model=OtpRequestResponse)
 def request_otp(payload: OtpRequest, db: Session = Depends(get_db)):
-    user = find_enduser_by_identifier(payload.identifier, db)
+    identifier = normalise_identifier(payload.identifier)
+    user = find_enduser_by_identifier(identifier, db)
 
     if not user:
-        raise HTTPException(
-            status_code=404,
-            detail="We could not find your account. Please contact your client/facility admin to get added to ServTrack.",
+        return OtpRequestResponse(
+            success=False,
+            message="We could not find your account. Please contact your facility administrator to get added to ServTrack.",
         )
     if not user.is_active:
-        raise HTTPException(status_code=403, detail="Account is deactivated")
+        return OtpRequestResponse(
+            success=False,
+            message="Your account is deactivated. Please contact your facility administrator.",
+        )
     if user.role != UserRole.ENDUSER:
-        raise HTTPException(status_code=400, detail="OTP login is only available for end users. Engineers and contractors must use email + password.")
+        return OtpRequestResponse(
+            success=False,
+            message="OTP login is only for end users. Engineers and contractors should use email and password.",
+        )
+
+    phone_twilio_failed = False
+    if "@" not in identifier and twilio_verify_configured():
+        if not user.phone:
+            raise HTTPException(status_code=422, detail="This account does not have a registered phone number")
+        sent, reason = start_twilio_phone_verification(decrypt_pii(user.phone))
+        if sent:
+            return OtpRequestResponse(message="OTP sent to your registered phone.", demo_otp=None)
+        phone_twilio_failed = True
+        if settings.APP_ENV != "development":
+            return OtpRequestResponse(
+                success=False,
+                message="Phone OTP could not be sent right now. Please try email OTP or contact your facility administrator.",
+            )
 
     otp = ''.join(random.choices(string.digits, k=6))
     user.otp_code = hash_password(otp)
@@ -144,20 +211,40 @@ def request_otp(payload: OtpRequest, db: Session = Depends(get_db)):
         user.otp_code = None
         user.otp_expires_at = None
         db.commit()
-        raise HTTPException(status_code=503, detail="OTP delivery is not configured. Please contact support.")
+        return OtpRequestResponse(
+            success=False,
+            message="OTP delivery is not configured. Please contact your facility administrator.",
+        )
+
+    fallback_message = "OTP sent to your registered email." if otp_sent else "OTP generated for local development."
+    if phone_twilio_failed:
+        fallback_message = (
+            "Phone OTP is unavailable in this Twilio trial setup, so OTP was sent to the registered email."
+            if otp_sent
+            else "Phone OTP is unavailable in this Twilio trial setup, so a local development OTP was generated."
+        )
 
     return OtpRequestResponse(
-        message="OTP sent to your registered email." if otp_sent else "OTP generated for local development.",
+        message=fallback_message,
         demo_otp=demo_otp,
     )
 
 
 @router.post("/verify-otp", response_model=TokenResponse)
 def verify_otp(payload: OtpVerify, db: Session = Depends(get_db)):
-    user = find_enduser_by_identifier(payload.identifier, db)
+    identifier = normalise_identifier(payload.identifier)
+    user = find_enduser_by_identifier(identifier, db)
 
     if not user or user.role != UserRole.ENDUSER:
         raise HTTPException(status_code=404, detail="Account not found")
+    if "@" not in identifier and twilio_verify_configured() and not user.otp_code:
+        if not user.phone:
+            raise HTTPException(status_code=422, detail="This account does not have a registered phone number")
+        if not check_twilio_phone_verification(decrypt_pii(user.phone), payload.otp_code.strip()):
+            raise HTTPException(status_code=401, detail="Invalid OTP")
+        token = create_access_token({"sub": str(user.id), "role": user.role.value})
+        return TokenResponse(access_token=token, user=UserOut.model_validate(user))
+
     if not user.otp_code or not verify_password(payload.otp_code.strip(), user.otp_code):
         raise HTTPException(status_code=401, detail="Invalid OTP")
     if not user.otp_expires_at:

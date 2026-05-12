@@ -6,6 +6,7 @@ import './Header.css';
 
 const PAGE_META = {
   '/dashboard':     { title: 'Dashboard',      sub: 'Overview — April 2026' },
+  '/admin':         { title: 'Admin Dashboard', sub: 'Owner metrics and client onboarding' },
   '/work-orders':   { title: 'Work Orders',    sub: 'All maintenance requests' },
   '/sla':           { title: 'SLA Tracker',    sub: 'Monitor resolution timelines' },
   '/approvals':     { title: 'Approvals',      sub: 'Items pending your action' },
@@ -54,6 +55,7 @@ export default function Header() {
           className="header-notif-btn"
           onClick={() => navigate('/notifications')}
           aria-label="Notifications"
+          style={{ display: role === 'superadmin' ? 'none' : undefined }}
         >
           <span>🔔</span>
           {unreadCount > 0 && (

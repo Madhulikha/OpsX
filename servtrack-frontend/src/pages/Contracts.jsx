@@ -313,7 +313,7 @@ function ContractDetailModal({ contract, relatedWorkOrders, onClose }) {
 }
 
 export default function Contracts() {
-  const { contracts, contractors, workOrders, role } = useApp();
+  const { contracts, contractors, workOrders, role, isCommandantEngineer } = useApp();
   const [statusFilter, setStatusFilter] = useState('all');
   const [contractorFilter, setContractorFilter] = useState('all');
   const [search, setSearch] = useState('');
@@ -367,7 +367,7 @@ export default function Contracts() {
           <div className="page-title">Contracts</div>
           <div className="page-sub">Agreement terms, renewal risk, SLA baselines, and live work impact</div>
         </div>
-        {role === 'client' && contractors.length > 0 && (
+        {role === 'client' && isCommandantEngineer && (
           <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>+ Add Contract</button>
         )}
       </div>

@@ -13,7 +13,7 @@ create extension if not exists "pgcrypto";
 -- ================================================================
 
 create type user_role as enum (
-    'client', 'contractor', 'supervisor', 'workman', 'enduser'
+    'superadmin', 'client', 'contractor', 'supervisor', 'workman', 'enduser'
 );
 
 create type wo_status as enum (
@@ -42,11 +42,10 @@ create type client_contractor_status as enum (
 -- ================================================================
 
 create table if not exists clients (
-    id          serial primary key,
-    name        varchar(200)    not null unique,
-    created_at  timestamptz     not null default now()
+    id             serial primary key,
+    name           varchar(200)    not null unique,
+    created_at     timestamptz     not null default now()
 );
-
 
 -- ================================================================
 --  CONTRACTORS
@@ -73,6 +72,7 @@ create index if not exists idx_contractors_active on contractors(is_active);
 
 create table if not exists contracts (
     id                  serial primary key,
+    client_id           integer         references clients(id) on delete cascade,
     contractor_id       integer         not null references contractors(id) on delete cascade,
     title               varchar(300)    not null,
     scope               text,
@@ -85,6 +85,8 @@ create table if not exists contracts (
 );
 
 create index if not exists idx_contracts_contractor on contracts(contractor_id);
+create index if not exists idx_contracts_client_contractor on contracts(client_id, contractor_id);
+create index if not exists idx_contracts_client_status on contracts(client_id, status);
 
 
 -- ================================================================
@@ -93,11 +95,20 @@ create index if not exists idx_contracts_contractor on contracts(contractor_id);
 
 create table if not exists users (
     id                serial primary key,
-    email             varchar(255)    not null unique,
-    full_name         varchar(255)    not null,
+    email             text            not null unique,
+    full_name         text            not null,
     hashed_password   varchar(255)    not null,
+    end_user_code     varchar(40),
+    email_lookup_hash varchar(64),
+    phone_lookup_hash varchar(64),
     role              user_role       not null,
-    phone             varchar(20),
+    phone             varchar(255),
+    address_line1     text,
+    address_line2     text,
+    city              text,
+    state             text,
+    postal_code       text,
+    country           text,
     contractor_id     integer         references contractors(id) on delete set null,
     client_id         integer         references clients(id) on delete set null,
     client_subrole    varchar(50),
@@ -107,10 +118,21 @@ create table if not exists users (
     created_at        timestamptz     not null default now()
 );
 
-create index if not exists idx_users_email         on users(email);
-create index if not exists idx_users_contractor_id on users(contractor_id);
-create index if not exists idx_users_client_id     on users(client_id);
-create index if not exists idx_users_role          on users(role);
+create index if not exists idx_users_email             on users(email);
+create index if not exists idx_users_email_lookup_hash on users(email_lookup_hash);
+create index if not exists idx_users_phone_lookup_hash on users(phone_lookup_hash);
+create index if not exists idx_users_client_enduser_code on users(client_id, end_user_code);
+create unique index if not exists uq_enduser_email_lookup_hash
+    on users(email_lookup_hash) where role = 'enduser' and email_lookup_hash is not null;
+create unique index if not exists uq_enduser_phone_lookup_hash
+    on users(phone_lookup_hash) where role = 'enduser' and phone_lookup_hash is not null;
+create unique index if not exists uq_enduser_client_code
+    on users(client_id, end_user_code) where role = 'enduser' and end_user_code is not null;
+create index if not exists idx_users_contractor_id     on users(contractor_id);
+create index if not exists idx_users_client_id         on users(client_id);
+create index if not exists idx_users_role              on users(role);
+create index if not exists idx_users_client_role       on users(client_id, role);
+create index if not exists idx_users_contractor_role   on users(contractor_id, role);
 
 
 -- ================================================================
@@ -148,9 +170,15 @@ create table if not exists work_orders (
 create index if not exists idx_wo_status        on work_orders(status);
 create index if not exists idx_wo_client        on work_orders(client_id);
 create index if not exists idx_wo_contractor    on work_orders(contractor_id);
+create index if not exists idx_wo_raised_by     on work_orders(raised_by_id);
+create index if not exists idx_wo_client_status on work_orders(client_id, status);
+create index if not exists idx_wo_contractor_status on work_orders(contractor_id, status);
+create index if not exists idx_wo_supervisor_status on work_orders(supervisor_id, status);
+create index if not exists idx_wo_workman_status on work_orders(workman_id, status);
 create index if not exists idx_wo_supervisor    on work_orders(supervisor_id);
 create index if not exists idx_wo_workman       on work_orders(workman_id);
 create index if not exists idx_wo_raised_by     on work_orders(raised_by_id);
+create sequence if not exists work_order_ref_seq;
 
 create table if not exists work_order_attachments (
     id                 serial primary key,

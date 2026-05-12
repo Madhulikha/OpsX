@@ -4,7 +4,7 @@ import StatusBadge from '../components/workorders/StatusBadge';
 import WODetailModal from '../components/workorders/WODetailModal';
 
 export default function SLATracker() {
-  const { workOrders } = useApp();
+  const { workOrders, dataReady } = useApp();
   const [selectedWO, setSelectedWO] = useState(null);
 
   const activeWOs = workOrders.filter(w => w.status !== 'closed');
@@ -23,13 +23,13 @@ export default function SLATracker() {
         </div>
       </div>
 
-      {breaches.length > 0 && (
+      {dataReady && breaches.length > 0 && (
         <div className="alert alert-danger">
           ⚠ {breaches.length} work order{breaches.length > 1 ? 's have' : ' has'} breached SLA.
           Immediate action required.
         </div>
       )}
-      {atRisk.length > 0 && (
+      {dataReady && atRisk.length > 0 && (
         <div className="alert alert-warning">
           ⚠ {atRisk.length} work order{atRisk.length > 1 ? 's are' : ' is'} approaching SLA deadline.
         </div>
@@ -49,7 +49,16 @@ export default function SLATracker() {
             </tr>
           </thead>
           <tbody>
-            {activeWOs.map(wo => {
+            {!dataReady ? (
+              <tr>
+                <td colSpan="7">
+                  <div className="empty-state" style={{ padding: 24 }}>
+                    <div className="empty-title">Loading SLA data</div>
+                    <div className="empty-sub">Fetching active work orders and timelines...</div>
+                  </div>
+                </td>
+              </tr>
+            ) : activeWOs.map(wo => {
               const pct = Math.min(Math.round((wo.elapsedHours / wo.slaHours) * 100), 100);
               const color = pct >= 100 ? 'var(--danger)' : pct >= 80 ? 'var(--warning)' : 'var(--success)';
               return (

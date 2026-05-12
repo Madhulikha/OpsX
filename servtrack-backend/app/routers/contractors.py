@@ -18,6 +18,16 @@ from app.services.email_service import build_contractor_invite_url, send_contrac
 router = APIRouter(prefix="/contractors", tags=["Contractors"])
 
 
+def _reject_superadmin(current_user: User) -> None:
+    if current_user.role == UserRole.SUPERADMIN:
+        raise HTTPException(status_code=403, detail="Super admins use aggregate admin endpoints only")
+
+
+def _require_commandant(current_user: User) -> None:
+    if current_user.role != UserRole.CLIENT or current_user.client_subrole != "commandant_engineer":
+        raise HTTPException(status_code=403, detail="Only commandant engineers can manage contractors and contracts")
+
+
 def _ensure_client_context(current_user: User) -> int:
     if current_user.client_id is None:
         raise HTTPException(status_code=422, detail="Your account is not linked to a client")
@@ -118,6 +128,7 @@ def list_contractors(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _reject_superadmin(current_user)
     if current_user.role in [UserRole.CLIENT, UserRole.ENDUSER] and current_user.client_id:
         links = (
             db.query(ClientContractorLink)
@@ -145,6 +156,7 @@ def discover_contractors(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(UserRole.CLIENT)),
 ):
+    _require_commandant(current_user)
     client_id = _ensure_client_context(current_user)
     linked_ids = db.query(ClientContractorLink.contractor_id).filter(
         ClientContractorLink.client_id == client_id,
@@ -169,6 +181,7 @@ def link_existing_contractor(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(UserRole.CLIENT)),
 ):
+    _require_commandant(current_user)
     client_id = _ensure_client_context(current_user)
     contractor = db.query(Contractor).filter(Contractor.id == payload.contractor_id, Contractor.is_active == True).first()
     if not contractor:
@@ -219,6 +232,7 @@ def create_contractor(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(UserRole.CLIENT)),
 ):
+    _require_commandant(current_user)
     client_id = _ensure_client_context(current_user)
 
     existing = db.query(Contractor).filter(
@@ -267,15 +281,18 @@ def list_client_contracts(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _reject_superadmin(current_user)
     q = db.query(Contract).options(joinedload(Contract.contractor))
 
     if current_user.role in [UserRole.CLIENT, UserRole.ENDUSER]:
+        if current_user.role == UserRole.CLIENT and current_user.client_subrole != "commandant_engineer":
+            raise HTTPException(status_code=403, detail="Only commandant engineers can view contracts")
         client_id = _ensure_client_context(current_user)
         linked_ids = db.query(ClientContractorLink.contractor_id).filter(
             ClientContractorLink.client_id == client_id,
             ClientContractorLink.status != ClientContractorStatus.INACTIVE,
         )
-        q = q.filter(Contract.contractor_id.in_(linked_ids))
+        q = q.filter(Contract.client_id == client_id, Contract.contractor_id.in_(linked_ids))
     elif current_user.role in [UserRole.CONTRACTOR, UserRole.SUPERVISOR, UserRole.WORKMAN]:
         if not current_user.contractor_id:
             return []
@@ -295,8 +312,10 @@ def create_contract(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(UserRole.CLIENT)),
 ):
+    _require_commandant(current_user)
+    client_id = _ensure_client_context(current_user)
     _get_client_link(db, current_user, payload.contractor_id)
-    contract = Contract(**payload.model_dump())
+    contract = Contract(**payload.model_dump(), client_id=client_id)
     db.add(contract)
     db.commit()
     db.refresh(contract)
@@ -309,6 +328,7 @@ def get_contractor(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _reject_superadmin(current_user)
     contractor = db.query(Contractor).filter(Contractor.id == contractor_id).first()
     if not contractor:
         raise HTTPException(status_code=404, detail="Contractor not found")
@@ -330,6 +350,7 @@ def update_contractor(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(UserRole.CLIENT)),
 ):
+    _require_commandant(current_user)
     contractor = db.query(Contractor).filter(Contractor.id == contractor_id).first()
     if not contractor:
         raise HTTPException(status_code=404, detail="Contractor not found")
@@ -347,6 +368,12 @@ def list_contracts(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _reject_superadmin(current_user)
     if current_user.role in [UserRole.CLIENT, UserRole.ENDUSER]:
+        client_id = _ensure_client_context(current_user)
         _get_client_link(db, current_user, contractor_id)
+        return db.query(Contract).filter(
+            Contract.client_id == client_id,
+            Contract.contractor_id == contractor_id,
+        ).all()
     return db.query(Contract).filter(Contract.contractor_id == contractor_id).all()

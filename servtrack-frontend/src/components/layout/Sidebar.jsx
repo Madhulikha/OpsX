@@ -6,6 +6,14 @@ import './Sidebar.css';
 
 // ── Nav config per role ──────────────────────────────────────
 const NAV_CONFIG = {
+  superadmin: [
+    {
+      section: 'Owner',
+      items: [
+        { to: '/admin', label: 'Admin Dashboard', icon: '⊞', badge: null },
+      ],
+    },
+  ],
   client: [
     {
       section: 'Overview',
@@ -27,7 +35,7 @@ const NAV_CONFIG = {
       items: [
         { to: '/contractors',    label: 'Contractors',   icon: '👥', badge: null },
         { to: '/contracts',      label: 'Contracts',     icon: '📄', badge: null },
-        { to: '/end-users',      label: 'End Users',     icon: '🏠', badge: null },
+        { to: '/end-users',      label: 'Users',         icon: '👤', badge: null },
         { to: '/assets',         label: 'Assets',        icon: '⚙',  badge: null, soon: true },
       ],
     },
@@ -109,8 +117,14 @@ const NAV_CONFIG = {
 };
 
 export default function Sidebar() {
-  const { role, currentUser, unreadCount, workOrders } = useApp();
-  const navItems = NAV_CONFIG[role] || NAV_CONFIG.client;
+  const { role, currentUser, unreadCount, workOrders, isCommandantEngineer } = useApp();
+  const navItems = (NAV_CONFIG[role] || NAV_CONFIG.client).map(section => ({
+    ...section,
+    items: section.items.filter(item => {
+      if (['/contracts', '/end-users'].includes(item.to)) return isCommandantEngineer;
+      return true;
+    }),
+  })).filter(section => section.items.length > 0);
   function approvalStageFor(wo) {
     if (wo.status === 'escalated') return 'commandant_engineer';
     if (!['open', 'rejected', 'pending'].includes(wo.status)) return 'none';

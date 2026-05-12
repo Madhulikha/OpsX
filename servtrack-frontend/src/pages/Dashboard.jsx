@@ -6,7 +6,7 @@ import WODetailModal from '../components/workorders/WODetailModal';
 import './Dashboard.css';
 
 export default function Dashboard() {
-  const { role, currentUser, workOrders, dashboardStats, contractors, notifications } = useApp();
+  const { role, currentUser, workOrders, dashboardStats, contractors, notifications, dataReady } = useApp();
   const navigate = useNavigate();
   const [selectedWO, setSelectedWO] = useState(null);
 
@@ -68,17 +68,46 @@ export default function Dashboard() {
     supervisor: [
       { label: 'Assigned', value: workOrders.filter(wo => wo.status === 'assigned').length, sub: 'ready to start', subCls: '' },
       { label: 'In Progress', value: workOrders.filter(wo => wo.status === 'inprogress').length, sub: 'site work active', subCls: '' },
-      { label: 'Pending QC', value: workOrders.filter(wo => wo.status === 'qc').length, sub: 'review required', subCls: 'warn' },
-      { label: 'Pending Approval', value: workOrders.filter(wo => wo.status === 'pending').length, sub: 'sent to client', subCls: '' },
+      { label: 'QC Review', value: workOrders.filter(wo => wo.status === 'qc').length, sub: 'review required', subCls: 'warn' },
+      { label: 'With Client', value: workOrders.filter(wo => wo.status === 'pending').length, sub: 'pending approval', subCls: '' },
     ],
     workman: [
-      { label: 'My Active Tasks', value: workOrders.filter(wo => wo.status !== 'closed').length, sub: 'current assignments', subCls: '' },
+      { label: 'Queued', value: workOrders.filter(wo => wo.status === 'assigned').length, sub: 'ready to start', subCls: '' },
       { label: 'In Progress', value: workOrders.filter(wo => wo.status === 'inprogress').length, sub: 'being worked now', subCls: '' },
+      { label: 'Submitted', value: workOrders.filter(wo => ['qc', 'pending'].includes(wo.status)).length, sub: 'under review', subCls: 'warn' },
+      { label: 'Closed', value: workOrders.filter(wo => wo.status === 'closed').length, sub: 'completed tasks', subCls: 'up' },
     ],
     enduser: endUserStats,
   };
 
   const stats = statsByRole[role] || statsByRole.client;
+  const gridColumns = `repeat(${Math.min(stats.length, 4)}, 1fr)`;
+
+  if (!dataReady) {
+    return (
+      <div className="page-loading">
+        <div className="loading-dots" aria-label="Loading">
+          <span />
+          <span />
+          <span />
+        </div>
+      </div>
+    );
+  }
+
+  function renderStats() {
+    return (
+      <div className="stats-grid" style={{ gridTemplateColumns: gridColumns }}>
+        {stats.map(stat => (
+          <div className="stat-card" key={stat.label}>
+            <div className="stat-label">{stat.label}</div>
+            <div className="stat-value">{stat.value}</div>
+            <div className={`stat-sub ${stat.subCls}`}>{stat.sub}</div>
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   if (role === 'enduser') {
     const activeRequests = workOrders.filter(wo => wo.status !== 'closed').slice(0, 4);
@@ -86,15 +115,7 @@ export default function Dashboard() {
 
     return (
       <div>
-        <div className="stats-grid" style={{ gridTemplateColumns: `repeat(${stats.length}, 1fr)` }}>
-          {stats.map(stat => (
-            <div className="stat-card" key={stat.label}>
-              <div className="stat-label">{stat.label}</div>
-              <div className="stat-value">{stat.value}</div>
-              <div className={`stat-sub ${stat.subCls}`}>{stat.sub}</div>
-            </div>
-          ))}
-        </div>
+        {renderStats()}
 
         <div className="enduser-dashboard-grid">
           <div className="card">
@@ -216,15 +237,7 @@ export default function Dashboard() {
 
     return (
       <div>
-        <div className="stats-grid" style={{ gridTemplateColumns: `repeat(${stats.length}, 1fr)` }}>
-          {stats.map(stat => (
-            <div className="stat-card" key={stat.label}>
-              <div className="stat-label">{stat.label}</div>
-              <div className="stat-value">{stat.value}</div>
-              <div className={`stat-sub ${stat.subCls}`}>{stat.sub}</div>
-            </div>
-          ))}
-        </div>
+        {renderStats()}
 
         <div className="enduser-dashboard-grid">
           <div className="card">
@@ -301,7 +314,7 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {recentWOs.map(wo => (
+                {dataReady && recentWOs.map(wo => (
                   <tr key={wo.id} onClick={() => setSelectedWO(wo)}>
                     <td>
                       <span style={{ fontSize: 11, color: 'var(--text-3)', display: 'block' }}>{wo.refNumber}</span>
@@ -389,15 +402,7 @@ export default function Dashboard() {
 
     return (
       <div>
-        <div className="stats-grid" style={{ gridTemplateColumns: `repeat(${stats.length}, 1fr)` }}>
-          {stats.map(stat => (
-            <div className="stat-card" key={stat.label}>
-              <div className="stat-label">{stat.label}</div>
-              <div className="stat-value">{stat.value}</div>
-              <div className={`stat-sub ${stat.subCls}`}>{stat.sub}</div>
-            </div>
-          ))}
-        </div>
+        {renderStats()}
 
         <div className="enduser-dashboard-grid">
           <div className="card">
@@ -473,15 +478,7 @@ export default function Dashboard() {
 
     return (
       <div>
-        <div className="stats-grid" style={{ gridTemplateColumns: `repeat(${stats.length}, 1fr)` }}>
-          {stats.map(stat => (
-            <div className="stat-card" key={stat.label}>
-              <div className="stat-label">{stat.label}</div>
-              <div className="stat-value">{stat.value}</div>
-              <div className={`stat-sub ${stat.subCls}`}>{stat.sub}</div>
-            </div>
-          ))}
-        </div>
+        {renderStats()}
 
         <div className="enduser-dashboard-grid">
           <div className="card">
@@ -552,15 +549,7 @@ export default function Dashboard() {
 
   return (
     <div>
-      <div className="stats-grid" style={{ gridTemplateColumns: `repeat(${stats.length}, 1fr)` }}>
-        {stats.map(stat => (
-          <div className="stat-card" key={stat.label}>
-            <div className="stat-label">{stat.label}</div>
-            <div className="stat-value">{stat.value}</div>
-            <div className={`stat-sub ${stat.subCls}`}>{stat.sub}</div>
-          </div>
-        ))}
-      </div>
+      {renderStats()}
 
       <div className="card">
         <div className="card-header">
@@ -578,7 +567,7 @@ export default function Dashboard() {
             </tr>
           </thead>
           <tbody>
-            {recentWOs.map(wo => (
+            {dataReady && recentWOs.map(wo => (
               <tr key={wo.id} onClick={() => setSelectedWO(wo)}>
                 <td>
                   <span style={{ fontSize: 11, color: 'var(--text-3)', display: 'block' }}>{wo.refNumber}</span>

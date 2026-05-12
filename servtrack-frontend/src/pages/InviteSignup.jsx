@@ -58,9 +58,9 @@ export default function InviteSignup() {
     <div className="login-screen">
       <div className="login-card">
         <div className="login-brand">Serv<span>Track</span></div>
-        <h1 className="login-title">Create your contractor account</h1>
+        <h1 className="login-title">Create your ServTrack account</h1>
         <p className="login-sub">
-          Finish your profile to start receiving work orders and contract updates.
+          Finish your profile and set a password to activate your workspace access.
         </p>
 
         {!token && (

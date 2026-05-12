@@ -51,6 +51,9 @@ class Contract(Base):
     __tablename__ = "contracts"
 
     id: Mapped[int]                 = mapped_column(Integer, primary_key=True, index=True)
+    client_id: Mapped[int]          = mapped_column(
+        Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=True, index=True,
+    )
     contractor_id: Mapped[int]      = mapped_column(
         Integer, ForeignKey("contractors.id", ondelete="CASCADE"), nullable=False, index=True,
     )
