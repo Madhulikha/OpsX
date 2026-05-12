@@ -16,6 +16,37 @@ const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://127.0.0.1:8000/ap
 const SHOW_DEMO_USERS = process.env.REACT_APP_SHOW_DEMO_USERS === 'true' || process.env.NODE_ENV === 'development';
 
 
+const FEATURES = [
+  {
+    icon: '🔧',
+    title: 'End-to-end service requests',
+    desc: 'Raise, assign, track and close maintenance jobs across all facilities from one dashboard.',
+  },
+  {
+    icon: '👥',
+    title: 'Multi-role workforce',
+    desc: 'Engineers, contractors, supervisors, workmen and end users — each with their own tailored view.',
+  },
+  {
+    icon: '📸',
+    title: 'Photo-verified completions',
+    desc: 'Workmen must upload completion photos before marking a job done. No more unverified closures.',
+  },
+  {
+    icon: '🔔',
+    title: 'Real-time notifications',
+    desc: 'Instant alerts on assignments, escalations, approvals and SLA breaches.',
+  },
+];
+
+const STATS = [
+  { value: '5', label: 'User Roles' },
+  { value: '360°', label: 'Workflow View' },
+  { value: 'OTP', label: 'End-User Login' },
+  { value: 'SLA', label: 'Tracked' },
+];
+
+
 export default function Login() {
   const navigate = useNavigate();
   const { login, showToast } = useApp();
@@ -100,7 +131,207 @@ export default function Login() {
   }
 
   return (
-    <div className="login-screen">
+    <>
+    <div className="lp-root">
+      {/* ── Left panel — hero ── */}
+      <div className="lp-hero">
+        <div className="lp-hero-inner">
+          <div className="lp-brand">Serv<span>Track</span></div>
+          <div className="lp-tagline">Facility &amp; Maintenance<br />Management, done right.</div>
+          <p className="lp-desc">
+            A single platform for engineers, contractors, supervisors and workmen
+            to raise, track and close every service request — with full accountability
+            at every step.
+          </p>
+
+          <div className="lp-stats">
+            {STATS.map(s => (
+              <div key={s.label} className="lp-stat">
+                <div className="lp-stat-value">{s.value}</div>
+                <div className="lp-stat-label">{s.label}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="lp-features">
+            {FEATURES.map(f => (
+              <div key={f.title} className="lp-feature">
+                <div className="lp-feature-icon">{f.icon}</div>
+                <div>
+                  <div className="lp-feature-title">{f.title}</div>
+                  <div className="lp-feature-desc">{f.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="lp-hero-footer">
+          Built for property management teams &nbsp;·&nbsp; Secure &amp; role-based
+        </div>
+      </div>
+
+      {/* ── Right panel — login form ── */}
+      <div className="lp-form-panel">
+        <div className="lp-form-wrap">
+          <div className="lp-form-header">
+            <div className="lp-form-title">Sign in</div>
+            <div className="lp-form-sub">Welcome back. Select your login method below.</div>
+          </div>
+
+          {/* Tabs */}
+          <div className="lp-tabs">
+            <button
+              className={`lp-tab${tab === 'password' ? ' active' : ''}`}
+              onClick={() => setTab('password')}
+            >
+              Password Login
+            </button>
+            <button
+              className={`lp-tab${tab === 'otp' ? ' active' : ''}`}
+              onClick={() => { setTab('otp'); setOtpStep('request'); setDemoOtp(''); setOtpCode(''); }}
+            >
+              OTP Login
+            </button>
+          </div>
+
+          {/* ── Password tab ── */}
+          {tab === 'password' && (
+            <div className="lp-tab-body">
+              {SHOW_DEMO_USERS && (
+                <div className="lp-demo-row">
+                  <div className="lp-demo-label">Quick demo sign-in:</div>
+                  <div className="lp-demo-chips">
+                    {DEMO_USERS.map(u => (
+                      <button
+                        key={u.email}
+                        className="lp-chip"
+                        type="button"
+                        onClick={() => { setEmail(u.email); setPassword(u.password); }}
+                      >
+                        {u.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <form onSubmit={handlePasswordSubmit}>
+                <div className="form-group">
+                  <label className="form-label">Email address</label>
+                  <input
+                    className="form-input"
+                    type="email"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    placeholder="you@organisation.com"
+                    autoComplete="username"
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Password</label>
+                  <input
+                    className="form-input"
+                    type="password"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    autoComplete="current-password"
+                    required
+                  />
+                </div>
+                <button className="btn btn-primary lp-submit" type="submit" disabled={submitting}>
+                  {submitting ? 'Signing in…' : 'Sign In'}
+                </button>
+              </form>
+
+              <p className="lp-hint">
+                For engineers, contractors, supervisors &amp; workmen.
+              </p>
+            </div>
+          )}
+
+          {/* ── OTP tab ── */}
+          {tab === 'otp' && (
+            <div className="lp-tab-body">
+              {otpStep === 'request' && (
+                <form onSubmit={handleRequestOtp}>
+                  <div className="lp-otp-intro">
+                    <span className="lp-otp-icon">📱</span>
+                    <span>We'll send a 6-digit code to your registered email or phone.</span>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Email or Phone Number</label>
+                    <input
+                      className="form-input"
+                      type="text"
+                      placeholder="user@example.com or +91 9876543210"
+                      value={otpIdentifier}
+                      onChange={e => setOtpIdentifier(e.target.value)}
+                      autoComplete="username"
+                      required
+                    />
+                  </div>
+                  <button className="btn btn-primary lp-submit" type="submit" disabled={otpSubmitting}>
+                    {otpSubmitting ? 'Sending…' : 'Send OTP'}
+                  </button>
+                </form>
+              )}
+
+              {otpStep === 'verify' && (
+                <form onSubmit={handleVerifyOtp}>
+                  {demoOtp && (
+                    <div className="lp-demo-otp-box">
+                      <div className="lp-demo-otp-label">Demo Mode — OTP</div>
+                      <div className="lp-demo-otp-code">{demoOtp}</div>
+                      <div className="lp-demo-otp-note">Email not configured. In production this is sent to the user.</div>
+                    </div>
+                  )}
+                  <div className="form-group">
+                    <label className="form-label">6-digit OTP</label>
+                    <input
+                      className="form-input lp-otp-input"
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={6}
+                      placeholder="000000"
+                      value={otpCode}
+                      onChange={e => setOtpCode(e.target.value.replace(/\D/g, ''))}
+                      autoComplete="one-time-code"
+                      autoFocus
+                    />
+                    <div className="lp-otp-sent-to">Sent to: {otpIdentifier} · valid for 10 min</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <button
+                      className="btn lp-submit"
+                      type="button"
+                      style={{ flex: '0 0 auto', width: 'auto', padding: '0 20px' }}
+                      onClick={() => { setOtpStep('request'); setDemoOtp(''); setOtpCode(''); }}
+                    >
+                      Back
+                    </button>
+                    <button
+                      className="btn btn-primary lp-submit"
+                      type="submit"
+                      disabled={otpSubmitting || otpCode.length !== 6}
+                      style={{ flex: 1 }}
+                    >
+                      {otpSubmitting ? 'Verifying…' : 'Verify & Sign In'}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              <p className="lp-hint">For end users / residents only.</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+    {/*<div className="login-screen">
       <div className="login-card">
         <div className="login-brand">Serv<span>Track</span></div>
         <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderBottom: '2px solid var(--border)', }}>
@@ -239,6 +470,7 @@ export default function Login() {
           </>
         )}
       </div>
-    </div>
+                </div>*/}
+      </>
   );
 }
