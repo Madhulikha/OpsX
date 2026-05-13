@@ -383,7 +383,7 @@ export default function WODetailModal({ wo, onClose }) {
           </div>
         ) : (
           <>
-            <button className="btn btn-primary" disabled={saving} onClick={() => runTransition('pending', 'Submitted for client approval', 'All checks passed')}>
+            <button className="btn btn-primary" disabled={saving} onClick={() => runTransition('pending', 'Submitted for final approval', 'All checks passed')}>
               Pass QC
             </button>
             <button className="btn btn-danger" disabled={saving} onClick={() => setShowRejectInput(true)}>

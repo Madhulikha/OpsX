@@ -15,6 +15,22 @@ const DEMO_USERS = [
 const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://127.0.0.1:8000/api/v1';
 const SHOW_DEMO_USERS = process.env.REACT_APP_SHOW_DEMO_USERS === 'true' || process.env.NODE_ENV === 'development';
 
+function otpIdentifierError(value) {
+  const raw = value.trim();
+  if (!raw) return 'Enter your registered email or phone number';
+  if (raw.includes('@')) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw) ? '' : 'Enter a valid email address';
+  }
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length < 10 || digits.length > 15) return 'Enter a valid phone number with country code';
+  return '';
+}
+
+function apiErrorMessage(data, fallback) {
+  if (typeof data?.detail === 'string') return data.detail;
+  if (Array.isArray(data?.detail) && data.detail[0]?.msg) return data.detail[0].msg;
+  return fallback;
+}
 
 const FEATURES = [
   {
@@ -58,6 +74,7 @@ export default function Login() {
   const [otpIdentifier, setOtpIdentifier] = useState('');
   const [otpCode, setOtpCode]             = useState('');
   const [demoOtp, setDemoOtp]             = useState('');
+  const [otpMessage, setOtpMessage]       = useState('');
   const [otpStep, setOtpStep]             = useState('request');
   const [otpSubmitting, setOtpSubmitting] = useState(false);
 
@@ -76,11 +93,13 @@ export default function Login() {
 
   async function handleRequestOtp(event) {
     event.preventDefault();
-    if (!otpIdentifier.trim()) {
-      showToast('Enter your email or phone number', 'danger');
+    const validationError = otpIdentifierError(otpIdentifier);
+    if (validationError) {
+      showToast(validationError, 'danger');
       return;
     }
     setOtpSubmitting(true);
+    setOtpMessage('');
     try {
       const resp = await fetch(`${API_BASE}/auth/request-otp`, {
         method: 'POST',
@@ -88,18 +107,21 @@ export default function Login() {
         body: JSON.stringify({ identifier: otpIdentifier.trim() }),
       });
       const data = await resp.json();
-      if (!resp.ok) throw new Error(data.detail || 'Failed to send OTP');
+      if (!resp.ok) throw new Error(apiErrorMessage(data, 'Failed to send OTP'));
       if (data.success === false) {
         setDemoOtp('');
         setOtpCode('');
         setOtpStep('request');
+        setOtpMessage(data.message || 'Please contact your facility administrator');
         showToast(data.message || 'Please contact your facility administrator', 'danger');
         return;
       }
       setDemoOtp(data.demo_otp || '');
+      setOtpMessage(data.message || '');
       setOtpStep('verify');
-      showToast(data.demo_otp ? 'OTP generated for local development' : 'OTP sent successfully', 'success');
+      showToast(data.message || (data.demo_otp ? 'OTP generated for local development' : 'OTP sent successfully'), 'success');
     } catch (error) {
+      setOtpMessage(error.message || 'Could not send OTP');
       showToast(error.message || 'Could not send OTP', 'danger');
     } finally {
       setOtpSubmitting(false);
@@ -108,8 +130,8 @@ export default function Login() {
 
   async function handleVerifyOtp(event) {
     event.preventDefault();
-    if (!otpCode.trim()) {
-      showToast('Enter the OTP code', 'danger');
+    if (!/^\d{6}$/.test(otpCode.trim())) {
+      showToast('Enter the 6-digit OTP code', 'danger');
       return;
     }
     setOtpSubmitting(true);
@@ -120,7 +142,7 @@ export default function Login() {
         body: JSON.stringify({ identifier: otpIdentifier.trim(), otp_code: otpCode.trim() }),
       });
       const data = await resp.json();
-      if (!resp.ok) throw new Error(data.detail || 'Invalid OTP');
+      if (!resp.ok) throw new Error(apiErrorMessage(data, 'Invalid OTP'));
       localStorage.setItem('servtrack_token', data.access_token);
       window.location.href = '/dashboard';
     } catch (error) {
@@ -268,11 +290,18 @@ export default function Login() {
                       type="text"
                       placeholder="user@example.com or +91 9876543210"
                       value={otpIdentifier}
-                      onChange={e => setOtpIdentifier(e.target.value)}
+                      onChange={e => {
+                        setOtpIdentifier(e.target.value);
+                        setOtpMessage('');
+                      }}
                       autoComplete="username"
                       required
                     />
+                    {otpIdentifier && otpIdentifierError(otpIdentifier) && (
+                      <div className="lp-field-error">{otpIdentifierError(otpIdentifier)}</div>
+                    )}
                   </div>
+                  {otpMessage && <div className="lp-otp-status danger">{otpMessage}</div>}
                   <button className="btn btn-primary lp-submit" type="submit" disabled={otpSubmitting}>
                     {otpSubmitting ? 'Sending…' : 'Send OTP'}
                   </button>
@@ -302,7 +331,7 @@ export default function Login() {
                       autoComplete="one-time-code"
                       autoFocus
                     />
-                    <div className="lp-otp-sent-to">Sent to: {otpIdentifier} · valid for 10 min</div>
+                    <div className="lp-otp-sent-to">{otpMessage || `Sent to: ${otpIdentifier} · valid for 10 min`}</div>
                   </div>
                   <div style={{ display: 'flex', gap: 10 }}>
                     <button

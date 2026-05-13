@@ -487,6 +487,26 @@ body {
   margin-top: 5px;
 }
 
+.lp-field-error {
+  color: var(--danger);
+  font-size: 11px;
+  margin-top: 5px;
+}
+
+.lp-otp-status {
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  margin: -4px 0 14px;
+  padding: 10px 12px;
+}
+
+.lp-otp-status.danger {
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  color: var(--danger);
+}
+
 .lp-demo-otp-box {
   background: var(--warning-bg);
   border: 1px solid var(--warning-border);

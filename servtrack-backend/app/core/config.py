@@ -23,6 +23,16 @@ class Settings(BaseSettings):
     TWILIO_AUTH_TOKEN: str | None = None
     TWILIO_VERIFY_SERVICE_SID: str | None = None
     TWILIO_VERIFY_CHANNEL: str = "sms"
+    SMS_PROVIDER: str | None = None
+    EXOTEL_SID: str | None = None
+    EXOTEL_ACCOUNT_SID: str | None = None
+    EXOTEL_API_KEY: str | None = None
+    EXOTEL_API_TOKEN: str | None = None
+    EXOTEL_SENDER_ID: str | None = None
+    EXOTEL_SUBDOMAIN: str = "api.in.exotel.com"
+    EXOTEL_DLT_ENTITY_ID: str | None = None
+    EXOTEL_DLT_TEMPLATE_ID: str | None = None
+    EXOTEL_SMS_TYPE: str = "transactional"
     UPLOAD_DIR: str = "uploads"
     MAX_UPLOAD_MB: int = 5
     MAX_WORK_ORDER_PHOTOS: int = 5
@@ -34,6 +44,10 @@ class Settings(BaseSettings):
     @property
     def origins_list(self) -> List[str]:
         return [o.strip() for o in self.ALLOWED_ORIGINS.split(",")]
+
+    @property
+    def exotel_account_sid(self) -> str | None:
+        return self.EXOTEL_ACCOUNT_SID or self.EXOTEL_SID
 
     class Config:
         env_file = ".env"

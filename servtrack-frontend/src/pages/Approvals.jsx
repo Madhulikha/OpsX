@@ -20,7 +20,7 @@ const TIER_DESCRIPTIONS = {
 
 function approvalStage(wo) {
   if (wo.status === 'escalated') return 'commandant_engineer';
-  if (!['open', 'rejected', 'pending'].includes(wo.status)) return 'none';
+  if (!['open', 'rejected'].includes(wo.status)) return 'none';
   const ageHours = (Date.now() - new Date(wo.createdAt).getTime()) / 3600000;
   if (ageHours >= 48) return 'commandant_engineer';
   if (ageHours >= 24) return 'assistant_engineer';
@@ -37,12 +37,13 @@ function ageLabel(createdAt) {
 
 function EscalationBadge({ wo, subrole }) {
   if (wo.status === 'pending') {
+    const requesterLabel = wo.raisedByUser?.role === 'enduser' ? 'requester' : 'client';
     return (
       <span style={{
         fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4,
         background: '#f0fdf4', color: 'var(--success)', border: '1px solid var(--success)',
       }}>
-        Work completed — awaiting sign-off
+        Work completed — awaiting {requesterLabel} sign-off
       </span>
     );
   }
@@ -90,19 +91,13 @@ export default function Approvals() {
   const tierDescription = TIER_DESCRIPTIONS[subrole] || '';
 
   const myItems = workOrders.filter(wo => {
-    if (wo.status === 'pending') return true;
+    if (wo.status === 'pending') return wo.raisedByUser?.role !== 'enduser';
     return approvalStage(wo) === subrole;
   });
 
   const newRequests = myItems.filter(wo => wo.status === 'open' || wo.status === 'rejected');
   const pendingSignOff = myItems.filter(wo => wo.status === 'pending');
   const escalated = myItems.filter(wo => wo.status === 'escalated');
-
-  const clientSubrole = currentUser?.client_subrole || 'junior_engineer';
-  const pending = workOrders.filter(w => {
-    if (['pending'].includes(w.status)) return clientSubrole === 'junior_engineer';
-    return approvalStage(w) === clientSubrole;
-  });
 
   return (
     <div>

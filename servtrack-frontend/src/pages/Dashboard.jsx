@@ -63,13 +63,13 @@ export default function Dashboard() {
       { label: 'Assigned', value: workOrders.filter(wo => wo.status === 'assigned').length, sub: 'to my company', subCls: '' },
       { label: 'In Progress', value: workOrders.filter(wo => wo.status === 'inprogress').length, sub: 'active jobs', subCls: '' },
       { label: 'Completed', value: workOrders.filter(wo => wo.status === 'closed').length, sub: 'visible to me', subCls: 'up' },
-      { label: 'Pending Approval', value: workOrders.filter(wo => wo.status === 'pending').length, sub: 'awaiting client', subCls: '' },
+      { label: 'Pending Sign-off', value: workOrders.filter(wo => wo.status === 'pending').length, sub: 'awaiting requester/client', subCls: '' },
     ],
     supervisor: [
       { label: 'Assigned', value: workOrders.filter(wo => wo.status === 'assigned').length, sub: 'ready to start', subCls: '' },
       { label: 'In Progress', value: workOrders.filter(wo => wo.status === 'inprogress').length, sub: 'site work active', subCls: '' },
       { label: 'QC Review', value: workOrders.filter(wo => wo.status === 'qc').length, sub: 'review required', subCls: 'warn' },
-      { label: 'With Client', value: workOrders.filter(wo => wo.status === 'pending').length, sub: 'pending approval', subCls: '' },
+      { label: 'Awaiting Sign-off', value: workOrders.filter(wo => wo.status === 'pending').length, sub: 'requester/client approval', subCls: '' },
     ],
     workman: [
       { label: 'Queued', value: workOrders.filter(wo => wo.status === 'assigned').length, sub: 'ready to start', subCls: '' },

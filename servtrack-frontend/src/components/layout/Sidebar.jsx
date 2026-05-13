@@ -127,7 +127,7 @@ export default function Sidebar() {
   })).filter(section => section.items.length > 0);
   function approvalStageFor(wo) {
     if (wo.status === 'escalated') return 'commandant_engineer';
-    if (!['open', 'rejected', 'pending'].includes(wo.status)) return 'none';
+    if (!['open', 'rejected'].includes(wo.status)) return 'none';
     const ageHours = (Date.now() - new Date(wo.createdAt).getTime()) / 3600000;
     if (ageHours >= 48) return 'commandant_engineer';
     if (ageHours >= 24) return 'assistant_engineer';
@@ -135,7 +135,7 @@ export default function Sidebar() {
   }
   const mySubrole = currentUser?.client_subrole || 'junior_engineer';
   const approvalsCount = role === 'client'
-    ? workOrders.filter(wo => wo.status === 'pending' || approvalStageFor(wo) === mySubrole).length
+    ? workOrders.filter(wo => (wo.status === 'pending' && wo.raisedByUser?.role !== 'enduser') || approvalStageFor(wo) === mySubrole).length
     : 0;
   const activeTaskCount = workOrders.filter(wo => wo.status !== 'closed').length;
   const roleInfo = ROLES[role] || ROLES.client;

@@ -462,7 +462,7 @@ def transition_status(
         "rejected":   "Request rejected by engineer",
         "inprogress": "Work started",
         "qc":         "Job done — submitted for QC",
-        "pending":    "QC passed — pending client approval",
+        "pending":    "QC passed — pending final approval",
         "closed":     "Approved and closed",
         "inprogress_from_pending": "Rejected — rework required",
         "inprogress_from_qc": "QC rejected — rework required",

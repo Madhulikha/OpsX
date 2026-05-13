@@ -16,68 +16,6 @@ from app.models.user import User
 logger = logging.getLogger(__name__)
 
 
-def twilio_verify_configured() -> bool:
-    return bool(
-        settings.TWILIO_VERIFY_ENABLED
-        and settings.TWILIO_ACCOUNT_SID
-        and settings.TWILIO_AUTH_TOKEN
-        and settings.TWILIO_VERIFY_SERVICE_SID
-    )
-
-
-def _twilio_verify_request(path: str, payload: dict[str, str]) -> dict:
-    import base64
-    import json
-
-    if not twilio_verify_configured():
-        raise RuntimeError("Twilio Verify is not configured")
-
-    url = f"https://verify.twilio.com/v2/Services/{settings.TWILIO_VERIFY_SERVICE_SID}/{path}"
-    body = urllib.parse.urlencode(payload).encode("utf-8")
-    credentials = f"{settings.TWILIO_ACCOUNT_SID}:{settings.TWILIO_AUTH_TOKEN}".encode("utf-8")
-    request = urllib.request.Request(
-        url,
-        data=body,
-        method="POST",
-        headers={
-            "Authorization": f"Basic {base64.b64encode(credentials).decode('ascii')}",
-            "Content-Type": "application/x-www-form-urlencoded",
-        },
-    )
-
-    try:
-        with urllib.request.urlopen(request, timeout=15) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        logger.error("Twilio Verify request failed: %s", detail)
-        raise RuntimeError(detail or "Twilio Verify request failed") from exc
-
-
-def start_twilio_phone_verification(phone: str) -> tuple[bool, str | None]:
-    try:
-        _twilio_verify_request("Verifications", {
-            "To": phone,
-            "Channel": settings.TWILIO_VERIFY_CHANNEL or "sms",
-        })
-        return True, None
-    except Exception as exc:
-        logger.warning("Failed to start Twilio verification for %s: %s", phone, exc)
-        return False, str(exc)
-
-
-def check_twilio_phone_verification(phone: str, code: str) -> bool:
-    try:
-        result = _twilio_verify_request("VerificationCheck", {
-            "To": phone,
-            "Code": code,
-        })
-    except Exception:
-        logger.exception("Failed to check Twilio verification for %s", phone)
-        return False
-    return result.get("status") == "approved"
-
-
 def build_contractor_invite_url(contractor: Contractor) -> str:
     token = create_invite_token({
         "sub": contractor.email,

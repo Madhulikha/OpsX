@@ -17,7 +17,7 @@ class WOStatus(str, enum.Enum):
     ASSIGNED   = "assigned"
     INPROGRESS = "inprogress"
     QC         = "qc"
-    PENDING    = "pending"       # pending client approval
+    PENDING    = "pending"       # pending requester/client approval
     CLOSED     = "closed"
     ESCALATED  = "escalated"
     REJECTED   = "rejected"

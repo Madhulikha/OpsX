@@ -1,10 +1,26 @@
 from datetime import datetime
 from typing import Optional
 
+import re
+
 from pydantic import BaseModel, EmailStr, field_validator, model_validator
 
 from app.core.pii import decrypt_pii
 from app.models.user import ClientSubRole, UserRole
+
+
+def validate_otp_identifier(value: str) -> str:
+    value = (value or "").strip()
+    if not value:
+        raise ValueError("Enter your registered email or phone number")
+    if "@" in value:
+        if len(value) > 254:
+            raise ValueError("Email is too long")
+        return value
+    digits = re.sub(r"\D", "", value)
+    if not 10 <= len(digits) <= 15:
+        raise ValueError("Enter a valid phone number with country code")
+    return value
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -17,10 +33,28 @@ class LoginRequest(BaseModel):
 class OtpRequest(BaseModel):
     identifier: str  # email or phone number
 
+    @field_validator("identifier")
+    @classmethod
+    def valid_identifier(cls, value: str) -> str:
+        return validate_otp_identifier(value)
+
 
 class OtpVerify(BaseModel):
     identifier: str
     otp_code: str
+
+    @field_validator("identifier")
+    @classmethod
+    def valid_identifier(cls, value: str) -> str:
+        return validate_otp_identifier(value)
+
+    @field_validator("otp_code")
+    @classmethod
+    def valid_otp(cls, value: str) -> str:
+        value = (value or "").strip()
+        if not re.fullmatch(r"\d{6}", value):
+            raise ValueError("OTP must be 6 digits")
+        return value
 
 
 class OtpRequestResponse(BaseModel):
