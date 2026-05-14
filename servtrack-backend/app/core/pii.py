@@ -29,6 +29,11 @@ def _key_bytes() -> bytes:
     return hashlib.sha256(settings.SECRET_KEY.encode("utf-8")).digest()
 
 
+def validate_pii_key_configured() -> None:
+    """Fail fast in deployed environments if encrypted PII cannot be decrypted."""
+    _key_bytes()
+
+
 def is_encrypted(value: Optional[str]) -> bool:
     return bool(value and value.startswith(ENCRYPTION_PREFIX))
 

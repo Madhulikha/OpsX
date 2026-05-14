@@ -173,60 +173,48 @@ def request_otp(payload: OtpRequest, db: Session = Depends(get_db)):
     if not user:
         return OtpRequestResponse(
             success=False,
-            message="We could not find your account. Please contact your facility administrator to get added to ServTrack.",
+            message="We could not find your account. Please contact your facility administrator."
         )
+
     if not user.is_active:
         return OtpRequestResponse(
             success=False,
-            message="Your account is deactivated. Please contact your facility administrator.",
+            message="Your account is deactivated. Please contact your facility administrator."
         )
+
     if user.role != UserRole.ENDUSER:
         return OtpRequestResponse(
             success=False,
-            message="OTP login is only for end users. Engineers and contractors should use email and password.",
+            message="OTP login is only for end users."
         )
 
-    phone_twilio_failed = False
+    # Only Twilio Verify path (NO DB OTP)
     if "@" not in identifier and twilio_verify_configured():
         if not user.phone:
-            raise HTTPException(status_code=422, detail="This account does not have a registered phone number")
-        sent, reason = start_twilio_phone_verification(decrypt_pii(user.phone))
-        if sent:
-            return OtpRequestResponse(message="OTP sent to your registered phone.", demo_otp=None)
-        phone_twilio_failed = True
-        if settings.APP_ENV != "development":
-            return OtpRequestResponse(
-                success=False,
-                message="Phone OTP could not be sent right now. Please try email OTP or contact your facility administrator.",
+            raise HTTPException(
+                status_code=422,
+                detail="This account does not have a registered phone number"
             )
 
-    otp = ''.join(random.choices(string.digits, k=6))
-    user.otp_code = hash_password(otp)
-    user.otp_expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
-    db.commit()
+        sent, reason = start_twilio_phone_verification(
+            decrypt_pii(user.phone)
+        )
 
-    otp_sent = send_enduser_otp(user, otp)
-    demo_otp = otp if settings.APP_ENV == "development" and not otp_sent else None
-    if not otp_sent and settings.APP_ENV != "development":
-        user.otp_code = None
-        user.otp_expires_at = None
-        db.commit()
+        if not sent:
+            return OtpRequestResponse(
+                success=False,
+                message="OTP could not be sent via Twilio. Please try again later."
+            )
+
         return OtpRequestResponse(
-            success=False,
-            message="OTP delivery is not configured. Please contact your facility administrator.",
+            success=True,
+            message="OTP sent to your registered phone."
         )
 
-    fallback_message = "OTP sent to your registered email." if otp_sent else "OTP generated for local development."
-    if phone_twilio_failed:
-        fallback_message = (
-            "Phone OTP is unavailable in this Twilio trial setup, so OTP was sent to the registered email."
-            if otp_sent
-            else "Phone OTP is unavailable in this Twilio trial setup, so a local development OTP was generated."
-        )
-
+    # If Twilio not configured → fallback (optional email OTP if you want)
     return OtpRequestResponse(
-        message=fallback_message,
-        demo_otp=demo_otp,
+        success=False,
+        message="OTP service is not configured."
     )
 
 
@@ -235,30 +223,34 @@ def verify_otp(payload: OtpVerify, db: Session = Depends(get_db)):
     identifier = normalise_identifier(payload.identifier)
     user = find_enduser_by_identifier(identifier, db)
 
-    if not user or user.role != UserRole.ENDUSER:
+    if not user:
         raise HTTPException(status_code=404, detail="Account not found")
-    if "@" not in identifier and twilio_verify_configured() and not user.otp_code:
-        if not user.phone:
-            raise HTTPException(status_code=422, detail="This account does not have a registered phone number")
-        if not check_twilio_phone_verification(decrypt_pii(user.phone), payload.otp_code.strip()):
-            raise HTTPException(status_code=401, detail="Invalid OTP")
-        token = create_access_token({"sub": str(user.id), "role": user.role.value})
-        return TokenResponse(access_token=token, user=UserOut.model_validate(user))
 
-    if not user.otp_code or not verify_password(payload.otp_code.strip(), user.otp_code):
+    if user.role != UserRole.ENDUSER:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    if not user.phone:
+        raise HTTPException(
+            status_code=422,
+            detail="No phone number registered"
+        )
+
+    # Twilio Verify validation ONLY
+    ok = check_twilio_phone_verification(
+        decrypt_pii(user.phone),
+        payload.otp_code.strip()
+    )
+
+    if not ok:
         raise HTTPException(status_code=401, detail="Invalid OTP")
-    if not user.otp_expires_at:
-        raise HTTPException(status_code=401, detail="OTP has expired. Please request a new one.")
 
-    expires_at = user.otp_expires_at
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if datetime.now(timezone.utc) > expires_at:
-        raise HTTPException(status_code=401, detail="OTP has expired. Please request a new one.")
+    # Success → issue JWT
+    token = create_access_token({
+        "sub": str(user.id),
+        "role": user.role.value
+    })
 
-    user.otp_code = None
-    user.otp_expires_at = None
-    db.commit()
-
-    token = create_access_token({"sub": str(user.id), "role": user.role.value})
-    return TokenResponse(access_token=token, user=UserOut.model_validate(user))
+    return TokenResponse(
+        access_token=token,
+        user=UserOut.model_validate(user)
+    )

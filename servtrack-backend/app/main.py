@@ -16,6 +16,7 @@ from app.core.pii import (
     normalize_email,
     normalize_phone,
     phone_lookup_hash,
+    validate_pii_key_configured,
 )
 from app.core.security import hash_password
 from app.models.client import ClientAccount
@@ -70,6 +71,7 @@ def health():
 
 @app.on_event("startup")
 def ensure_runtime_tables():
+    validate_pii_key_configured()
     with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
         conn.execute(text("alter type user_role add value if not exists 'superadmin'"))
         conn.execute(text("alter type wo_status add value if not exists 'rejected'"))
